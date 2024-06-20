@@ -1,6 +1,7 @@
 name: Tests
 
-on: [push, pull_request]
+#on: [push, pull_request]
+on: workflow_dispatch
 
 jobs:
     tests:
@@ -10,10 +11,10 @@ jobs:
         strategy:
             fail-fast: false
             matrix:
-                php: [7.4, 8.0, 8.1]
+                php: [8.3]
                 experimental: [false]
                 include:
-                    - php: 8.1
+                    - php: 8.3
                       analysis: true
 
         steps:
