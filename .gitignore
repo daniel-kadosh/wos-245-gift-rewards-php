@@ -1,6 +1,5 @@
 .env
 .env.backup
-.env.production
 build
 dist
 compiled

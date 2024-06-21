@@ -26,10 +26,9 @@ RUN apt-get autoremove -y \
 EXPOSE 80
 ENV APACHE_CONFDIR                  /etc/apache2
 ENV APACHE_ENVVARS                  $APACHE_CONFDIR/envvars
-ENV ABSOLUTE_APACHE_DOCUMENT_ROOT   /var/www/html/
+ENV ABSOLUTE_APACHE_DOCUMENT_ROOT   /var/www/public/
 
 COPY 000-default.conf /etc/apache2/sites-available/000-default.conf
-COPY ../public/.htaccess ../public/* ${ABSOLUTE_APACHE_DOCUMENT_ROOT}
 
 WORKDIR /var/www
 
