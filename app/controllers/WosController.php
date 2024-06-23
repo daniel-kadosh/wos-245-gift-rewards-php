@@ -1,5 +1,7 @@
 <?php
 
+namespace App\Controllers;
+
 use Leaf\Controller;
 use Leaf\Http\Request;
 
