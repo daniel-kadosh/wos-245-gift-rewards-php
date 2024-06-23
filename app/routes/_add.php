@@ -1,6 +1,6 @@
 <?php
 
-app()->get('/', function () {
+app()->get('/add', function () {
     #response()->json(['message' => 'Congrats!! You\'re on Leaf API']);
     response()->markup("<h1>WOS #245 Gift Rewards</h1>
         <ul><li>Database players: <a href=\"/players\">/players</a></li>
