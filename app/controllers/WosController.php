@@ -9,6 +9,7 @@ class WosController extends Controller {
     public function __construct() {
         parent::__construct();
         $this->request = new Request;
+        db()->autoConnect();
     }
 
     /**

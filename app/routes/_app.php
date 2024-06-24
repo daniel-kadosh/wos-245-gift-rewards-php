@@ -9,8 +9,8 @@ app()->get('/', function () {
 
 app()->get("/", "WosController@index");
 app()->get("/players", "WosController@players");
-app()->get('/add/{player_id}', "$controller@add");
-app()->get('/remove/{player_id}', "$controller@remove");
+app()->get('/add/{player_id}', "WosController@add");
+app()->get('/remove/{player_id}', "WosController@remove");
 app()->get("/send", "WosController@send");
 
 /*
