@@ -12,51 +12,89 @@ class WosController extends Controller {
     }
 
     /**
-     * Display a listing of the resource.
+     * Default menu.
      */
     public function index() {
-        //
+        $this->htmlHeader();
+        response()->markup("
+            <ul><li>Database players: <a href=\"/players\">/players</a></li>
+            <li>Send a reward: <a href=\"/send/\">/send/</a>[giftcode]</li>
+            <li>Add a player: <a href=\"/add/\">/add</a>[playerID]</li>
+            <li>Remove a player: <a href=\"/remove/\">/remove</a>[playerID]</li>
+            </ul>");
+        $this->htmlFooter();
     }
 
     /**
-     * Show the form for creating a new resource.
+     * List players & last gift reward result.
      */
-    public function create() {
-        //
+    public function players() {
+        $this->htmlHeader();
+        response()->markup("Player list:<br\>\n");
+        $all_players = db()->select("players")->all();
+        response()->markup("<table><tr><th>player_id</th><th>name</th><th>last message</th></tr>\n");
+        foreach ($all_players as $p) {
+            response()->markup("<tr><td>$p->player_id</td><td>$p->player_name</td><td>$p->last_message</td></tr>\n");
+        }
+        response()->markup("</table>\n");
+        $this->htmlFooter();
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Create a new player.
      */
-    public function store() {
-        //
+    public function add($player_id) {
+        $player_id = $this->validateId($player_id);
+        $this->htmlHeader();
+        response()->markup("Add player id=$player_id<br/>");
+        $result = db()
+            ->insert("players")
+            ->params([
+                "player_id" => $player_id,
+                "player_name" => "divergent",
+                "last_message" => "(new player)"
+                ])
+            ->execute();
+        $this->htmlFooter();
     }
 
     /**
-     * Display the specified resource.
+     * Remove player.
      */
-    public function show($id) {
-        //
+    public function remove($player_id) {
+        $player_id = $this->validateId($player_id);
+        $this->htmlHeader();
+        response()->markup("REMOVE player id=$player_id<br/>");
+        $this->htmlFooter();
     }
 
     /**
-     * Show the form for editing the specified resource.
+     * Send reward code to all users.
      */
-    public function edit($id) {
+    public function send() {
         //
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update($id) {
-        //
+    ///////////////////////// Helper functions
+    private function validateId($player_id) {
+        if (!is_null($player_id)) {
+            $int_id = abs(intval($player_id));
+            if ($int_id > 0 && $int_id <= PHP_INT_MAX ) {
+                return $int_id;
+            }
+        }
+        $this->htmlHeader();
+        response()->markup('ERROR: invalid player id='.$player_id.'<br/>');
+        $this->htmlFooter();
+        response()->exit('Invalid ID '.$player_id,400);
     }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy($id) {
-        //
+    ///////////////////////// View functions
+    private function htmlHeader() {
+        response()->markup("<html><body><h1>WOS #245 Gift Rewards</h1>
+            <p><a href=\"/\">Home</a></p>
+            <p>");
+    }
+    private function htmlFooter() {
+        response()->markup("</p></body></html>");
     }
 }
