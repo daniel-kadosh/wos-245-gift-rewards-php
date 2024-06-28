@@ -13,6 +13,11 @@ app()->get('/add/{player_id}', "WosController@add");
 app()->get('/remove/{player_id}', "WosController@remove");
 app()->get("/send", "WosController@send");
 
+// Debugging...
+app()->get("/pi", function() {
+    phpinfo(INFO_ALL);
+});
+
 /*
 app()->get('/users/{id}', function ($id) {
     response()->markup("This is user $id");
