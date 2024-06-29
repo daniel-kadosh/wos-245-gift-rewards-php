@@ -1,6 +1,4 @@
 <?php
-#namespace App\Database\Migrations;
-
 use Leaf\Schema;
 use Leaf\Database;
 use Illuminate\Database\Schema\Blueprint;
@@ -8,6 +6,8 @@ use Illuminate\Database\Schema\Blueprint;
 // CREATE TABLE players ( player_id varchar(255), player_name varchar(255), last_message varchar(255) );
 // Divergent(36929232): ZwB2BnwX2: Gift code already used.
 
+// Need to auto-run this on startup within the container:
+// php leaf db:migrate -vvv
 class CreatePlayers extends Database
 {
     /**
@@ -35,5 +35,3 @@ class CreatePlayers extends Database
         static::$capsule::schema()->dropIfExists('users');
     }
 }
-
-print "Loaded ".__FILE__."\n";
