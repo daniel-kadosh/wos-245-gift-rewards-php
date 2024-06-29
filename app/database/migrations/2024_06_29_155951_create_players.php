@@ -1,4 +1,5 @@
 <?php
+#namespace App\Database\Migrations;
 
 use Leaf\Schema;
 use Leaf\Database;
@@ -34,3 +35,5 @@ class CreatePlayers extends Database
         static::$capsule::schema()->dropIfExists('users');
     }
 }
+
+print "Loaded ".__FILE__."\n";
