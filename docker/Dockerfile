@@ -4,7 +4,6 @@ FROM thecodingmachine/php:8.3-v4-slim-apache
 ######## PHP + Composer config
 RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     php8.3-sqlite3 sqlite3
-#    php8.3-http
 
 RUN composer global require leafs/cli
 RUN sudo ln -s /root/.composer/vendor/bin/leaf /usr/local/bin/leaf
@@ -33,4 +32,4 @@ WORKDIR /var/www
 
 RUN sudo chown -R docker:docker /var/www
 
-CMD ["apache2-foreground"]
+CMD ["./docker-cmd.sh"]

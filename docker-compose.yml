@@ -11,9 +11,3 @@ services:
       - type: bind
         source: /var/local/wos245/
         target: /var/www/wos245/
-  db-migration:
-    image: leafphp/docker
-    depends_on:
-      - application
-    restart: "no"
-    entrypoint: ["bash", "-c", "php leaf db:migrate -vvv"]
