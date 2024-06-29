@@ -18,7 +18,7 @@ class CreatePlayers extends Database
     {
         if (!static::$capsule::schema()->hasTable("players")) {
             static::$capsule::schema()->create("players", function (Blueprint $table) {
-                $table->primary('player_id');
+                $table->integer('player_id')->primary();
          		$table->string('player_name');
          		$table->string('last_message');
          		$table->timestamps();
