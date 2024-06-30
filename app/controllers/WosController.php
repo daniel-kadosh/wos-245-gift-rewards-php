@@ -3,9 +3,12 @@
 namespace App\Controllers;
 
 use Leaf\Controller;
+use Leaf\Date;
 use Leaf\Http\Request;
 
 class WosController extends Controller {
+    const HASH = "tB87#kPtkxqOS2";
+
     public function __construct() {
         parent::__construct();
         $this->request = new Request;
@@ -32,7 +35,7 @@ class WosController extends Controller {
     public function players() {
         $this->htmlHeader();
         response()->markup("Player list:<br\>\n");
-        $all_players = db()->select("players")->all();
+        $all_players = db()->select("players")->orderBy('player_id') ->all();
         response()->markup("<table><tr><th>player_id</th><th>name</th><th>last message</th></tr>\n");
         foreach ($all_players as $p) {
             response()->markup("<tr><td>".$p['player_id'].
@@ -50,7 +53,9 @@ class WosController extends Controller {
     public function add($player_id) {
         $player_id = $this->validateId($player_id);
         $this->htmlHeader();
-        response()->markup("Add player id=$player_id<br/>");
+        $this->signIn($player_id);
+
+        response()->markup("Adding player id=$player_id<br/>");
         $result = db()
             ->insert("players")
             ->params([
@@ -69,6 +74,10 @@ class WosController extends Controller {
         $player_id = $this->validateId($player_id);
         $this->htmlHeader();
         response()->markup("REMOVE player id=$player_id<br/>");
+        $result = db()
+            ->delete("players")
+            ->params(["player_id" => $player_id])
+            ->execute();
         $this->htmlFooter();
     }
 
@@ -92,6 +101,15 @@ class WosController extends Controller {
         $this->htmlFooter();
         response()->exit('Invalid ID '.$player_id,400);
     }
+
+    private function signIn($player_id) {
+	// https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/toString
+        // example: "Tue Aug 19 1975 23:15:30 GMT+0200 (CEST)"
+        $time = new Date();
+	$timestring = $time->format('ddd MMM D YYYY HH:mm:ss').' GMT+0200 (CEST)';
+        response()->markup("timestamp: $timestring<br/>\n");
+    }
+
     ///////////////////////// View functions
     private function htmlHeader() {
         response()->markup("<html><body><h1>WOS #245 Gift Rewards</h1>
@@ -102,3 +120,4 @@ class WosController extends Controller {
         response()->markup("</p></body></html>");
     }
 }
+
