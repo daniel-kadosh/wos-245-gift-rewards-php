@@ -9,13 +9,14 @@ $0 -a|-o|-r [-p|-d]
 -a stArt WOS container
 -o stOp WOS container
 -r Rebuild WOS container
+-b start Bash shell inside running container
 -p set to Production environment
 -d set to Development environment
 "
     exit 1
 }
 
-OPSTRING=":aorpd"
+OPSTRING=":aorbpd"
 while getopts ${OPSTRING} opt; do
     case ${opt} in
         a)  CMD=wos-start
@@ -23,6 +24,8 @@ while getopts ${OPSTRING} opt; do
         o)  CMD=wos-stop
             ;;
         r)  CMD=wos-rebuild
+            ;;
+        b)  CMD=wos-bash
             ;;
         p)  ENV=production
             ;;
@@ -44,7 +47,7 @@ function wos-start() {
     set -x
     cd /home/divergent/wos-245-gift-rewards-php
     cp -f .env.${ENV} .env
-    sudo docker compose up --detach
+    sudo docker compose up --detach --remove-orphans
 }
 
 function wos-stop() {
@@ -61,6 +64,12 @@ function wos-rebuild() {
     composer update
     cp -f .env.${ENV} .env
     sudo docker compose build --no-cache
+}
+
+function wos-bash() {
+    echo "Starting Bash shell in running container"
+    set -x
+    sudo docker compose exec application bash
 }
 
 $CMD
