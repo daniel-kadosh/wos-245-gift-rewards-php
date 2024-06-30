@@ -9,8 +9,7 @@ class WosController extends Controller {
     public function __construct() {
         parent::__construct();
         $this->request = new Request;
-        $o = db()->autoConnect();
-response()->markup("<pre>DB autoconnect=\n".print_r($o,true)."\n</pre>\n");
+        db()->autoConnect();
     }
 
     /**
@@ -36,7 +35,10 @@ response()->markup("<pre>DB autoconnect=\n".print_r($o,true)."\n</pre>\n");
         $all_players = db()->select("players")->all();
         response()->markup("<table><tr><th>player_id</th><th>name</th><th>last message</th></tr>\n");
         foreach ($all_players as $p) {
-            response()->markup("<tr><td>$p->player_id</td><td>$p->player_name</td><td>$p->last_message</td></tr>\n");
+            response()->markup("<tr><td>".$p['player_id'].
+                "</td><td>".$p['player_name'].
+                "</td><td>".$p['last_message'].
+                "</td></tr>\n");
         }
         response()->markup("</table>\n");
         $this->htmlFooter();
