@@ -7,7 +7,7 @@ namespace App\Models;
 class Player extends Model
 {
     protected $table = 'players';
-    protected $primaryKey = 'player_id';
+    protected $primaryKey = 'id';
     protected $incrementing = false;
 
     /**
@@ -15,7 +15,7 @@ class Player extends Model
      * @var array
      */
     protected $fillable = [
-        'player_id', 'player_name', 'last_message',
+        'id', 'player_name', 'last_message',
     ];
 
     /**

@@ -17,7 +17,7 @@ class PlayerFactory extends Factory
     public function definition(): array
     {
         return [
-            'player_id' => $this->faker->name,
+            'id' => $this->faker->name,
             'player_name' => strtolower($this->faker->userName),
             'last_message' => $this->faker->words(3,true),
             // 'email_verified_at' => tick()->now(),
