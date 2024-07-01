@@ -1,9 +1,5 @@
 <?php
-
 namespace App\Models;
-
-// CREATE TABLE players ( player_id varchar(255), player_name varchar(255), last_message varchar(255) );
-
 class Player extends Model
 {
     protected $table = 'players';
@@ -16,6 +12,7 @@ class Player extends Model
      */
     protected $fillable = [
         'id', 'player_name', 'last_message',
+        'avatar_image', 'stove_lv', 'stove_lv_content'
     ];
 
     /**
@@ -23,5 +20,4 @@ class Player extends Model
      * @var bool
      */
     public $timestamps = true;
-
 }

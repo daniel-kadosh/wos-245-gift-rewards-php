@@ -9,8 +9,10 @@ use Leaf\Http\Request;
 use PDOException;
 
 class WosController extends Controller {
-    const HASH = "tB87#kPtkxqOS2";
-    private $guz;           // Guzzle client object
+    const HASH = "tB87#kPtkxqOS2";      // WOS API secret
+    private $time = null;               // tick() DateTime object
+    private $guz;                       // Guzzle HTTP client object
+    private $rateLimitRemaining = -1;   // API rate limit in sec
 
     public function __construct() {
         parent::__construct();
@@ -24,12 +26,12 @@ class WosController extends Controller {
      */
     public function index() {
         $this->htmlHeader();
-        response()->markup("
-            <ul><li>Database players: <a href=\"/players\">/players</a></li>
-            <li>Send a reward: <a href=\"/send/\">/send/</a>[giftcode]</li>
-            <li>Add a player: <a href=\"/add/\">/add</a>[playerID]</li>
-            <li>Remove a player: <a href=\"/remove/\">/remove</a>[playerID]</li>
-            </ul>");
+        $this->p("<ul>");
+        $this->p("Database players: <a href=\"/players\">/players</a>",'li');
+        $this->p("Send a reward: <a href=\"/send/\">/send/</a>[giftcode]",'li');
+        $this->p("Add a player: <a href=\"/add/\">/add</a>[playerID]",'li');
+        $this->p("Remove a player: <a href=\"/remove/\">/remove</a>[playerID]",'li');
+        $this->p('ul');
         $this->htmlFooter();
     }
 
@@ -38,19 +40,18 @@ class WosController extends Controller {
      */
     public function players() {
         $this->htmlHeader();
-        response()->markup("Player list:<br\>\n");
+        $this->p("Player list:",'p');
         $all_players = db()
             ->select("players")
             ->orderBy('id')
             ->all();
-        response()->markup("<table><tr><th>id</th><th>name</th><th>last message</th></tr>\n");
+        $this->p("<table><tr><th>id</th><th>name</th><th>last message</th></tr>");
         foreach ($all_players as $p) {
-            response()->markup("<tr><td>".$p['id'].
-                "</td><td>".$p['player_name'].
-                "</td><td>".$p['last_message'].
-                "</td></tr>\n");
+            $this->p($p['id'],'td');
+            $this->p($p['player_name'],'td');
+            $this->p($p['last_message'],'td');
         }
-        response()->markup("</table>\n");
+        $this->p("</tr></table>");
         $this->htmlFooter();
     }
 
@@ -60,37 +61,45 @@ class WosController extends Controller {
     public function add($player_id) {
         $player_id = $this->validateId($player_id);
         $this->htmlHeader();
-
-        response()->markup("Adding player id=$player_id<br/>");
+        $this->p("Adding player id=$player_id",'p');
         try {
             // Check for duplicate before hitting WOS API
             $result = db()
-                ->select("players")->find($player_id);
-#                ->where(["id" => $player_id]);
-
-response()->markup("<pre>SELECT result: ".print_r($result,true)."\n</pre>\n");
-            if ($result > 0) {
-                response()->markup("<b>ERROR:</b> player ID already exists, ignored.");
+                ->select("players")
+                ->find($player_id);
+            if (_env('APP_DEBUG')=='true') {
+                $this->pDebug('SELECT by player_id',$result);
+            }
+            if (!empty($result)) {
+                $this->p("<b>ERROR:</b> player ID already exists, ignored.",'p');
             } else {
                 // Verify player is in #245 thru WOS API
                 $response = $this->signIn($player_id);
                 $data = $response['data'];
-                if ($data['kid'] == 245) {
+                if ($data->kid == 245) {
                     $result = db()
                         ->insert("players")
                         ->params([
-                            "id" => $player_id,
-                            "player_name" => $data['nickname'],
-                            "last_message" => "(Created)"
+                            'id'            => $player_id,
+                            'player_name'   => $data->nickname,
+                            'last_message'  => '(Created)',
+                            'avatar_image'  => $data->avatar_image,
+                            'stove_lv'      => $data->stove_lv,
+                            'stove_lv_content' => $data->stove_lv_content,
+                            'created_at'    => $this->getTimestring(),
+                            'updated_at'    => $this->getTimestring()
                             ])
                         ->execute();
+                    if (_env('APP_DEBUG')=='true') {
+                        $this->pDebug('INSERT ',$result);
+                    }
                 }
-                response()->markup("Name <b>".$data['nickname']."</b> inserted into database<br/>\n");
+                $this->p("Name <b>".$data['nickname']."</b> inserted into database",'p');
             }
         } catch (PDOException $ex) {
-            response()->markup("<p><b>DB ERROR:</b> ".$ex->getMessage()."</p>\n");
+            $this->p("<b>DB ERROR:</b> ".$ex->getMessage(),'p');
         } catch (\Exception $ex) {
-            response()->markup("<p><b>Exception:</b> ".$ex->getMessage()."</p>\n");
+            $this->p("<b>Exception:</b> ".$ex->getMessage(),'p');
         }
         $this->htmlFooter();
     }
@@ -106,6 +115,11 @@ response()->markup("<pre>SELECT result: ".print_r($result,true)."\n</pre>\n");
             ->delete("players")
             ->where(["id" => $player_id])
             ->execute();
+        $count = $result->rowCount();
+        if (_env('APP_DEBUG')=='true') {
+            $this->pDebug("DELETEd $count records: ",$result);
+        }
+
         $this->htmlFooter();
     }
 
@@ -150,8 +164,12 @@ response()->markup("<pre>SELECT result: ".print_r($result,true)."\n</pre>\n");
     ======== Body:
     {"code":1,"data":[],"msg":"params error","err_code":""}
     {"code":1,"data":[],"msg":"Sign Error","err_code":0}
+    {"code":0,"data":{"fid":33750731,"nickname":"lord33750731","kid":245,
+        "stove_lv":10,"stove_lv_content":10,
+        "avatar_image":"https:\/\/gof-formal-avatar.akamaized.net\/avatar-dev\/2023\/07\/17\/1001.png"},
+        "msg":"success","err_code":""}
 */        
-/*
+
         $response = $this->guz->request('POST',
             'https://wos-giftcode-api.centurygame.com/api/player',
             [
@@ -168,12 +186,13 @@ response()->markup("<pre>SELECT result: ".print_r($result,true)."\n</pre>\n");
         );
         $rateLimitRemaining = intval($response->getHeader('X-RateLimit-Remaining'));
 
-        response()->markup("<p>========Body:<br/>".$response->getBody()."</p>\n");
+        $this->p("========Body:<br/>".$response->getBody());
         $body = json_decode($response->getBody());
-        $data = $body['data'];
-*/
-$rateLimitRemaining=5;
-$data = ['kid'=>245, 'nickname'=>'D1vergentTST'];
+        $this->pDebug('Body: ',$body);
+        $data = $body->data;
+#$rateLimitRemaining=5;
+#$data = ['kid'=>245, 'nickname'=>'D1vergentTST'];
+
         return [
             'data' => $data,
             'x-ratelimit-remaining' => $rateLimitRemaining
@@ -181,20 +200,27 @@ $data = ['kid'=>245, 'nickname'=>'D1vergentTST'];
     }
 
     private function getTimestring() {
-        // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Date/toString
-        // example: "Tue Aug 19 1975 23:15:30 GMT+0200 (CEST)"
-        $time = new Date();
-	    return $time->format('ddd MMM D YYYY HH:mm:ss').' GMT+0200 (CEST)';
+        if (empty($this->time)) {
+            $this->time = tick();
+        }
+        // String of UNIX time
+	    return (string) $this->time->format('U');
     }
 
     ///////////////////////// View functions
     private function htmlHeader() {
         response()->markup("<html><body><h1>WOS #245 Gift Rewards</h1>
-            <p><a href=\"/\">Home</a></p>
-            <p>");
+            <p><a href=\"/\">Home</a></p>\n");
     }
     private function htmlFooter() {
-        response()->markup("</p></body></html>");
+        response()->markup("</body></html>");
+    }
+    private function p($msg,$htmlType=null) {
+        response()->markup((empty($htmlType) ? '' : "<$htmlType>").
+            $msg. (empty($htmlType) ? '' : "</$htmlType>"). "\n");
+    }
+    private function pDebug($msg,&$text) {
+        $this->p("$msg: ".print_r($text,true)."\n",'pre');
     }
 }
 

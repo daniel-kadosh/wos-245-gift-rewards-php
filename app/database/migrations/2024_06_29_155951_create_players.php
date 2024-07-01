@@ -20,8 +20,11 @@ class CreatePlayers extends Database
             static::$capsule::schema()->create("players", function (Blueprint $table) {
                 $table->integer('id')->primary();
          		$table->string('player_name');
-         		$table->string('last_message');
-         		$table->timestamps();
+                $table->string('last_message');
+                $table->string('avatar_image');
+                $table->integer('stove_lv');
+                $table->string('stove_lv_content');
+                $table->timestamps(); // created_at, updated_at
          	});
         }
     }
