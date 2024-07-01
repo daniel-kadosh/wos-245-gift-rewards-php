@@ -18,6 +18,7 @@ class WosController extends Controller {
         parent::__construct();
         $this->request = new Request;
         db()->autoConnect();
+        $this->time = tick();
         $this->guz = new Client(['timeout'=>10]);
     }
 
@@ -26,12 +27,12 @@ class WosController extends Controller {
      */
     public function index() {
         $this->htmlHeader();
-        $this->p("<ul>");
+        $this->p('<ul>');
         $this->p("Database players: <a href=\"/players\">/players</a>",'li');
         $this->p("Send a reward: <a href=\"/send/\">/send/</a>[giftcode]",'li');
         $this->p("Add a player: <a href=\"/add/\">/add</a>[playerID]",'li');
         $this->p("Remove a player: <a href=\"/remove/\">/remove</a>[playerID]",'li');
-        $this->p('ul');
+        $this->p('</ul>');
         $this->htmlFooter();
     }
 
@@ -40,18 +41,28 @@ class WosController extends Controller {
      */
     public function players() {
         $this->htmlHeader();
-        $this->p("Player list:",'p');
+        $this->p('Player list:','p');
         $all_players = db()
-            ->select("players")
+            ->select('players')
             ->orderBy('id')
             ->all();
-        $this->p("<table><tr><th>id</th><th>name</th><th>last message</th></tr>");
+        $this->p('<table>'.
+            '<tr><th>id</th><th>Name</th><th>F#</th>'.
+            '<th>Last message</th><th>Last Update UTC</th></tr>');
         foreach ($all_players as $p) {
+            $this->p('<tr>');
             $this->p($p['id'],'td');
-            $this->p($p['player_name'],'td');
+            $this->p('<img src="'.$p['avatar_image'].'" width="20"> <b>'.$p['player_name'].'</b>','td');
+            $this->p((strlen($p['stove_lv_content']) > 6 ?
+                    '<img src="'.$p['stove_lv_content'].'" width="30">' :
+                    'F'.$p['stove_lv']
+                )
+                ,'td');
             $this->p($p['last_message'],'td');
+            $this->p($p['updated_at'],'td');
+            $this->p('</tr>');
         }
-        $this->p("</tr></table>");
+        $this->p('</table>');
         $this->htmlFooter();
     }
 
@@ -65,20 +76,20 @@ class WosController extends Controller {
         try {
             // Check for duplicate before hitting WOS API
             $result = db()
-                ->select("players")
+                ->select('players')
                 ->find($player_id);
             if (_env('APP_DEBUG')=='true') {
                 $this->pDebug('SELECT by player_id',$result);
             }
             if (!empty($result)) {
-                $this->p("<b>ERROR:</b> player ID already exists, ignored.",'p');
+                $this->p('<b>ERROR:</b> player ID already exists, ignored.','p');
             } else {
                 // Verify player is in #245 thru WOS API
                 $response = $this->signIn($player_id);
                 $data = $response['data'];
                 if ($data->kid == 245) {
                     $result = db()
-                        ->insert("players")
+                        ->insert('players')
                         ->params([
                             'id'            => $player_id,
                             'player_name'   => $data->nickname,
@@ -86,20 +97,20 @@ class WosController extends Controller {
                             'avatar_image'  => $data->avatar_image,
                             'stove_lv'      => $data->stove_lv,
                             'stove_lv_content' => $data->stove_lv_content,
-                            'created_at'    => $this->getTimestring(),
-                            'updated_at'    => $this->getTimestring()
+                            'created_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
+                            'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss')
                             ])
                         ->execute();
                     if (_env('APP_DEBUG')=='true') {
                         $this->pDebug('INSERT ',$result);
                     }
                 }
-                $this->p("Name <b>".$data['nickname']."</b> inserted into database",'p');
+                $this->p('Name <b>'.$data->nickname.'</b> inserted into database','p');
             }
         } catch (PDOException $ex) {
-            $this->p("<b>DB ERROR:</b> ".$ex->getMessage(),'p');
+            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
         } catch (\Exception $ex) {
-            $this->p("<b>Exception:</b> ".$ex->getMessage(),'p');
+            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p');
         }
         $this->htmlFooter();
     }
@@ -110,14 +121,22 @@ class WosController extends Controller {
     public function remove($player_id) {
         $player_id = $this->validateId($player_id);
         $this->htmlHeader();
-        response()->markup("REMOVE player id=$player_id<br/>");
-        $result = db()
-            ->delete("players")
-            ->where(["id" => $player_id])
-            ->execute();
-        $count = $result->rowCount();
-        if (_env('APP_DEBUG')=='true') {
-            $this->pDebug("DELETEd $count records: ",$result);
+        $this->p("REMOVING player id=$player_id",'p');
+        try {
+            $result = db()
+                ->delete('players')
+                ->where(['id' => $player_id])
+                ->execute();
+            $count = $result->rowCount();
+            if ($count > 0) {
+                $this->p('Success!','p');
+            } else {
+                response()->exit('Player ID not found',404);
+            }
+        } catch (PDOException $ex) {
+            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
+        } catch (\Exception $ex) {
+            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p');
         }
 
         $this->htmlFooter();
@@ -180,19 +199,16 @@ class WosController extends Controller {
                     'time' => $timestring
                 ],
                 'headers' => [
-                    "Content-Type" => "application/x-www-form-urlencoded"
+                    'Content-Type' => 'application/x-www-form-urlencoded'
                 ]
             ]
         );
         $rateLimitRemaining = intval($response->getHeader('X-RateLimit-Remaining'));
 
-        $this->p("========Body:<br/>".$response->getBody());
+        $this->p('========Body:<br/>'.$response->getBody(),'pre');
         $body = json_decode($response->getBody());
         $this->pDebug('Body: ',$body);
         $data = $body->data;
-#$rateLimitRemaining=5;
-#$data = ['kid'=>245, 'nickname'=>'D1vergentTST'];
-
         return [
             'data' => $data,
             'x-ratelimit-remaining' => $rateLimitRemaining
@@ -200,20 +216,20 @@ class WosController extends Controller {
     }
 
     private function getTimestring() {
-        if (empty($this->time)) {
-            $this->time = tick();
-        }
         // String of UNIX time
 	    return (string) $this->time->format('U');
     }
 
     ///////////////////////// View functions
     private function htmlHeader() {
-        response()->markup("<html><body><h1>WOS #245 Gift Rewards</h1>
-            <p><a href=\"/\">Home</a></p>\n");
+        $this->p('<html><head><style>');
+        $this->p('th, td, tr { padding: 2px; }');
+        $this->p('</style></head>');
+        $this->p('<body><h1>WOS #245 Gift Rewards</h1>');
+        $this->p('<a href="/">Home</a>','p');
     }
     private function htmlFooter() {
-        response()->markup("</body></html>");
+        $this->p('</body></html>');
     }
     private function p($msg,$htmlType=null) {
         response()->markup((empty($htmlType) ? '' : "<$htmlType>").
