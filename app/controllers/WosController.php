@@ -88,17 +88,32 @@ class WosController extends Controller {
                 $this->p('No players in the database that still need that gift code.','p');
             }
             foreach ($all_players as $p) {
-                response()->sendContent();
                 // Verify player
-                $signInResponse = $this->signIn($p['id']);
+                $this->p('<p>'.$p['id'].' <b>'.$p['player_name'].'</b>: ');
+                $tries = 2;
+                while ($tries>0) {
+                    $signInResponse = $this->signIn($p['id']);
+                    $tries--;
+                    if ($signInResponse['http-status']==429) {
+                        // Hit rate limit!
+                        $this->p('(Pausing due to 429 signIn rate limit) ');
+                        sleep(61);
+                    } else if ($signInResponse['http-status'] >= 400) {
+                        $this->p('<b>WOS signIn API ERROR:</b> '.$signInResponse['guzExceptionMessage'],'p');
+                        break 2;
+                    } else {
+                        // All good!
+                        break;
+                    }
+                }
                 $s = $signInResponse['data'];
                 $state = empty($s->kid) ? 0 : $s->kid;
-                $this->p('<p>'.$p['id'].' <b>#'.$state.' '.$p['player_name'].'</b>: ');
-                if (empty($state) || $state!=self::OUR_STATE) {
-                    $this->p('Deleting, invalid user or state</p>');
+                if ($state!=self::OUR_STATE || $signInResponse['err_code'] == 40004) {
+                    $this->p('DELETING player: invalid user or state</p>');
                     $this->deletePlayer($p['id']);
                     continue;
                 }
+
                 // Update player if needed
                 if ( $p['player_name']      != $s->nickname ||
                     $p['avatar_image']      != $s->avatar_image ||
@@ -116,8 +131,9 @@ class WosController extends Controller {
                         ->where(['id' => $p['id']])
                         ->execute();
                 }
-                // ?? Perhaps use API ratelimit feedback here?
-                if ($signInResponse['headers']['x-ratelimit-remaining'] < 3) {
+                // ?? Use API ratelimit feedback here?
+                if ($signInResponse['headers']['x-ratelimit-remaining'] < 2) {
+                    $this->p('(pausing 10sec: low x-ratelimit-remaining) ');
                     sleep (10);
                 }
 
@@ -125,24 +141,32 @@ class WosController extends Controller {
                 $tries = 2;
                 while ($tries>0) {
                     $giftResponse = $this->sendGiftCode($p['id'],$giftCode);
+                    $tries--;
                     $giftErrCode = $giftResponse['err_code'];
                     if ($giftErrCode == 40014) {
                         // Invalid gift code
                         $this->p('Aborting: Invalid gift code','b');
                         break 2;
                     }
-                    $tries--;
                     if ($giftResponse['http-status']==429) {
                         // Too many requests
                         $ratelimitReset = $giftResponse['headers']['x-ratelimit-reset'];
-//                        $resetAt = tick($ratelimitReset);
-                        $resetIn = tick(intval($ratelimitReset) - time());
-                        if (_env('APP_DEBUG')=='true') {
-                            $this->p("429: x-ratelimit-reset=$ratelimitReset now=".time().
-                                " resetIn=$resetIn"
-//                            "resetAt=".$resetAt->format('U'));
+                        // Convert from UNIX time?
+                        $resetAt = (intval($ratelimitReset) == $ratelimitReset ?
+                                        tick("@$ratelimitReset") : tick());
+                        $resetIn = intval($ratelimitReset) - intval($this->getTimestring(false,true));
+                        //if (_env('APP_DEBUG')=='true') {
+                        // Force debug info for this case, as we haven't gotten to it.
+                        // The 60sec sleep for a 429 in signIn above seems to have solved
+                        // this whole issue, and we may not need to sleep here at all.
+                            $this->pDebug('Headers: ',$giftResponse['headers']);
+                            $this->p("<br/>429: x-ratelimit-reset=$ratelimitReset"
+                                ." now=".$this->getTimestring(false,true)
+                                ."=".$this->getTimestring(false,false)."<br/>\n"
+                                ." resetIn=$resetIn"
+                                ." resetAt=".$resetAt->format('YYYY-MM-DD HH:mm:ss')
                                 ,'p');
-                        }
+                        //}
                         db()->update('players')
                             ->params([
                                 'last_message'  =>"Too many attempts: Retry in $resetIn seconds",
@@ -151,6 +175,8 @@ class WosController extends Controller {
                             ->where(['id' => $p['id']])
                             ->execute();
                         sleep(2); // ?? change to $resetIn
+                    } else if ($giftResponse['http-status'] >= 400) {
+                        $this->p('<b>WOS gift API ERROR:</b> '.$giftResponse['guzExceptionMessage'],'p');
                     } else { // Success!
                         break;
                     }
@@ -197,6 +223,8 @@ class WosController extends Controller {
                 $response = $this->signIn($player_id);
                 if ($response['err_code'] == 40004) {
                     $this->p('<b>ERROR:</b> player ID does not exist in WOS, ignored.','p');
+                } else if ($response['http-status'] >= 400) {
+                    $this->p('<b>WOS API ERROR:</b> '.$response['guzExceptionMessage'],'p');
                 } else {
                     $data = $response['data'];
                     if ($data->kid == self::OUR_STATE) {
@@ -279,12 +307,6 @@ class WosController extends Controller {
 
     ///////////////////////// Guzzle functions
     private function signIn($fid) {
-        $timestring = $this->getTimestring();
-        if (_env('APP_DEBUG')=='true') {
-            $this->p("Form params:<br/>\n".
-                    "sign raw: fid=$fid&time=$timestring".self::HASH."\n".
-                    "sign md5: ".md5("fid=$fid&time=$timestring".self::HASH),'pre');
-        }
 /*
     ====== Headers:
     Date: Sun, 30 Jun 2024 16:42:27 GMT
@@ -305,38 +327,13 @@ class WosController extends Controller {
         "avatar_image":"https:\/\/gof-formal-avatar.akamaized.net\/avatar-dev\/2023\/07\/17\/1001.png"},
         "msg":"success","err_code":""}
 */        
-
-        $response = $this->guz->request('POST',
+        return $this->guzzlePOST(
             'https://wos-giftcode-api.centurygame.com/api/player',
-            [
-                'form_params' =>
-                [
-                    'sign' => md5("fid=$fid&time=$timestring".self::HASH),
-                    'fid'  => $fid,
-                    'time' => $timestring
-                ],
-                'headers' => [
-                    'Content-Type' => 'application/x-www-form-urlencoded'
-                ]
-            ]
+            $fid
         );
-        $body = json_decode($response->getBody());
-        if (_env('APP_DEBUG')=='true') {
-            $this->pDebug('Headers: ',$this->parseGuzzleHeaders($response));
-            $this->pDebug('Body: ',$body);
-        }
-        return [
-            'code'          => $body->code,
-            'data'          => $body->data,
-            'msg'           => $body->msg,
-            'err_code'      => $body->err_code,
-            'headers'       => $this->parseGuzzleHeaders($response),
-            'http-status'   => $response->getStatusCode()
-        ];
     }
 
     private function sendGiftCode($fid, $giftCode) {
-        $timestring = $this->getTimestring(true);
 /*
 Headers:
     [date] => Tue, 02 Jul 2024 13:03:07 GMT
@@ -365,33 +362,68 @@ Body3:
     [msg] => CDK NOT FOUND.
     [err_code] => 40014
 */
-        $response = $this->guz->request('POST',
+        return $this->guzzlePOST(
             'https://wos-giftcode-api.centurygame.com/api/gift_code',
-            [
-                'form_params' =>
-                [
-                    'sign' => md5("cdk=$giftCode&fid=$fid&time=$timestring".self::HASH),
-                    'fid'  => $fid,
-                    'time' => $timestring,
-                    'cdk'  => $giftCode
-                ],
-                'headers' => [
-                    'Content-Type' => 'application/x-www-form-urlencoded'
-                ]
-            ]
+            $fid,
+            $giftCode
         );
-        $body = json_decode($response->getBody());
+    }
+
+    private function guzzlePOST($url,$fid,$cdk='') {
+        $timestring = $this->getTimestring();
+        $signRaw = ($cdk ? "cdk=$cdk&" : '').
+            "fid=$fid&time=$timestring".self::HASH;
         if (_env('APP_DEBUG')=='true') {
-            $this->pDebug('Headers: ',$this->parseGuzzleHeaders($response));
+            $this->p("Form params:<br/>\n".
+                    "sign raw: $signRaw\n".
+                    "sign md5: ".md5($signRaw),'pre');
+        }
+        $formParams = [
+            'sign' => md5($signRaw),
+            'fid'  => $fid,
+            'time' => $timestring
+        ];
+        if ($cdk) {
+            $formParams['cdk'] = $cdk;
+        }
+        try {
+            $guzExceptionMessage = '';
+            $response = $this->guz->request('POST',
+                $url,
+                [
+                    'form_params' => $formParams,
+                    'headers' => [
+                        'Content-Type' => 'application/x-www-form-urlencoded'
+                    ]
+                ]
+            );
+        } catch (\GuzzleHttp\Exception\BadResponseException $e ) {
+            // With a 4xx or 5xx HTTP return code, Guzzle throws this exception.
+            // Pull out Response object from exception class, process as "normal"
+            $response = $e->getResponse();
+            $guzExceptionMessage = $e->getMessage();
+        }
+
+        $body = json_decode($response->getBody());
+        // Headers: Force all param names to lower case and
+        // combine values array into a string
+        $headers = [];
+        foreach ($response->getHeaders() as $name => $values) {
+            $headers[strtolower($name)] = implode(',',$values);
+        }
+        if (_env('APP_DEBUG')=='true') {
+            $this->p("<br/>======== HTTP return code: ".$response->getStatusCode(),'p');
+            $this->pDebug('Headers: ',$headers);
             $this->pDebug('Body: ',$body);
         }
         return [
-            'code'          => $body->code,
-            'data'          => $body->data,
-            'msg'           => $body->msg,
-            'err_code'      => $body->err_code,
-            'headers'       => $this->parseGuzzleHeaders($response),
-            'http-status'   => $response->getStatusCode()
+            'code'          => (isset($body->code) ? $body->code : null),
+            'data'          => (isset($body->data) ? $body->data : null),
+            'msg'           => (isset($body->msg) ? $body->msg : null),
+            'err_code'      => (isset($body->err_code) ? $body->err_code : null),
+            'headers'       => $headers,
+            'http-status'   => $response->getStatusCode(),
+            'guzExceptionMessage' => $guzExceptionMessage
         ];
     }
 
@@ -401,16 +433,6 @@ Body3:
         }
 	    return (string) $this->time->format($inUnixTime ? 'U':
                 'YYYY-MM-DD HH:mm:ss');
-    }
-
-    private function parseGuzzleHeaders($response) {
-        // Force all param names to lower case and
-        // combine values array into a string
-        $headers = [];
-        foreach ($response->getHeaders() as $name => $values) {
-            $headers[strtolower($name)] = implode(',',$values);
-        }
-        return $headers;
     }
 
     ///////////////////////// View functions
