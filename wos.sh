@@ -60,7 +60,10 @@ function wos-stop() {
 function wos-rebuild() {
     echo "Rebuilding with ${ENV} environment"
     set -x
-    #cd /home/divergent/wos-245-gift-rewards-php
+    # SQLite3 database
+    mkdir ./wos245
+    touch ./wos245/gift-rewards.db
+    chmod 666 ./wos245/gift-rewards.db
     composer update
     cp -f .env.${ENV} .env
     sudo docker compose build --no-cache

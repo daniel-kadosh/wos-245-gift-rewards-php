@@ -7,7 +7,7 @@ services:
       - '80:80'
     volumes:
       - .:/var/www
-      # For SQlite database, mount dir from host OS
-      - type: bind
-        source: /var/local/wos245/
-        target: /var/www/wos245/
+      # For SQlite database, could mount different dir from host OS
+      #- type: bind
+      #  source: /var/local/wos245/
+      #  target: /var/www/wos245/
