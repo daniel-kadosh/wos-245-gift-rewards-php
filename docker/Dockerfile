@@ -8,13 +8,9 @@ RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
 RUN composer global require leafs/cli
 RUN sudo ln -s /root/.composer/vendor/bin/leaf /usr/local/bin/leaf
 
-# PHP ini in:
-# /etc/php/8.3/cli/php.ini
-# /etc/php/8.3/cli/conf.d/*
-# /etc/php/8.3/apache2/php.ini
-# /etc/php/8.3/apache2/conf.d/*
-COPY ./php.ini /etc/php/8.3/cli/conf.d/99-divergent.ini
-COPY ./php.ini /etc/php/8.3/apache2/conf.d/99-divergent.ini
+# Extra config for PHP.ini
+COPY ./php.ini /etc/php/8.3/cli/conf.d/99-wos245.ini
+COPY ./php.ini /etc/php/8.3/apache2/conf.d/99-wos245.ini
 
 RUN sudo apt-get autoremove -y \
     && sudo apt-get clean \
