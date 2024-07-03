@@ -47,13 +47,13 @@ https://leafphp.dev/docs/config/
 ## Database creation
 `wos.sh -r` will create an empty SQlite3 db automatically if it doesn't exist.
 
-Remove ./wos245/gift-rewards.db and re-run `wos.sh -r` to empty the database.
+To empty the database, remove `wos245/gift-rewards.db` and re-start the application.
 
 ## Database initialization
 Normal startup with `wos.sh -a` will run all DB migration scripts under
 `app/database/migrations/`
 
 ## Deployment instructions
-Run `wos.sh -a -p` to start with production environment, or `wos.sh -a -d` for dev/debug).
+Run `wos.sh -a -p` to start with production environment, or `wos.sh -a -d` for dev/debug.
 
-Run `wos-sh -o` to stop docker.
+Run `wos-sh -o` to stop the docker container.
