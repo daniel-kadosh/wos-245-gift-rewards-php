@@ -77,13 +77,16 @@ class WosController extends Controller {
     public function send($giftCode) {
         $this->validateGiftCode($giftCode);
         $this->htmlHeader('== Send Gift Code');
-        $this->p("Sending $giftCode to all players",'p');
+        $this->p("Sending <b>$giftCode</b> to all players:",'p');
         try {
             $all_players = db()
                 ->select('players')
                 ->where('last_message', 'not like', $giftCode)
                 ->orderBy('id','asc')
                 ->all();
+            if (count($all_players)==0) {
+                $this->p('No players in the database that still need that gift code.','p');
+            }
             foreach ($all_players as $p) {
                 response()->sendContent();
                 // Verify player
@@ -414,6 +417,8 @@ Body3:
     private function htmlHeader($title=null) {
         $this->p('<html><head><style>');
         $this->p('th, td, tr { padding: 2px; text-align: left; }'); // border: 1px solid grey
+        $this->p('th { text-decoration: underline; }');
+        #$this->p('th { border-bottom: 1px solid black; }');
         $this->p('</style></head>');
         $this->p('<body><h1>WOS #245 Gift Rewards</h1>');
         $this->p('<a href="/">Home</a>','p');

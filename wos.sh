@@ -61,7 +61,6 @@ function wos-rebuild() {
     echo "Rebuilding with ${ENV} environment"
     set -x
     # SQLite3 database
-    mkdir ./wos245
     touch ./wos245/gift-rewards.db
     chmod 666 ./wos245/gift-rewards.db
     composer update
