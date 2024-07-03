@@ -45,7 +45,9 @@ fi
 function wos-start() {
     echo "Starting with ${ENV} environment"
     set -x
-    cd /home/divergent/wos-245-gift-rewards-php
+    # Ensure we have an SQLite3 database file
+    touch ./wos245/gift-rewards.db
+    chmod 666 ./wos245/gift-rewards.db
     cp -f .env.${ENV} .env
     sudo docker compose up --detach --remove-orphans
 }
@@ -60,9 +62,6 @@ function wos-stop() {
 function wos-rebuild() {
     echo "Rebuilding with ${ENV} environment"
     set -x
-    # SQLite3 database
-    touch ./wos245/gift-rewards.db
-    chmod 666 ./wos245/gift-rewards.db
     composer update
     cp -f .env.${ENV} .env
     sudo docker compose build --no-cache
