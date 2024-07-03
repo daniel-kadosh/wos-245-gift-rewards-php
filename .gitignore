@@ -1,0 +1,13 @@
+.env
+.env.backup
+build
+dist
+compiled
+.idea
+hot
+vendor
+node_modules
+npm-debug.log
+yarn-error.log
+*.code-workspace
+wos245/[a-z]*
