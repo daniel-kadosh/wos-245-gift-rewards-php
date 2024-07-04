@@ -19,3 +19,8 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 </IfModule>
+
+AuthType Digest
+AuthName "wos245"
+AuthUserFile "/var/www/wos245/apache-auth"
+Require valid-user

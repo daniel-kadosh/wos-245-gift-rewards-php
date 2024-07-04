@@ -21,6 +21,7 @@ EXPOSE 80
 ENV APACHE_CONFDIR                  /etc/apache2
 ENV APACHE_ENVVARS                  $APACHE_CONFDIR/envvars
 ENV ABSOLUTE_APACHE_DOCUMENT_ROOT   /var/www/public/
+ENV APACHE_EXTENSIONS               "auth_digest"
 
 COPY 000-default.conf /etc/apache2/sites-available/000-default.conf
 
