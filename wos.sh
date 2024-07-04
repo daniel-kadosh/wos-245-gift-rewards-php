@@ -54,7 +54,7 @@ fi
 
 APACHE_AUTH_FILE=wos245/apache-auth
 SQLITE_FILE=wos245/gift-rewards.db
-DOCKER_APP_NAME=application
+DOCKER_APP_NAME=wos245-app
 
 function wos-start() {
     echo "Starting with ${ENV} environment"

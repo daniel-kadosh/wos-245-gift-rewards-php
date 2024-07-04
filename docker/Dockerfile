@@ -17,7 +17,7 @@ RUN sudo apt-get autoremove -y \
     && sudo rm -rf /var/lib/apt/lists/* /tmp/*
 
 ######## Apache config
-EXPOSE 80
+EXPOSE 80/tcp 443/tcp
 ENV APACHE_CONFDIR                  /etc/apache2
 ENV APACHE_ENVVARS                  $APACHE_CONFDIR/envvars
 ENV ABSOLUTE_APACHE_DOCUMENT_ROOT   /var/www/public/
