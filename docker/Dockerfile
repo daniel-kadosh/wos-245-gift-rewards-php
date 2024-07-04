@@ -27,6 +27,6 @@ COPY 000-default.conf /etc/apache2/sites-available/000-default.conf
 
 WORKDIR /var/www
 
-RUN sudo chown -R docker:docker /var/www
+#RUN sudo chown -R docker:docker /var/www
 
 CMD ["./docker-cmd.sh"]
