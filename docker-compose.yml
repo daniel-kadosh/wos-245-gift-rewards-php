@@ -5,6 +5,7 @@ services:
     image: leafphp/docker
     ports:
       - '80:80'
+      - '443:443'
     volumes:
       - .:/var/www
       # For SQlite database, could mount different dir from host OS
