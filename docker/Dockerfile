@@ -17,15 +17,14 @@ RUN sudo apt-get autoremove -y \
     && sudo rm -rf /var/lib/apt/lists/* /tmp/*
 
 ######## Apache config
-EXPOSE 80
+EXPOSE 80/tcp 443/tcp
 ENV APACHE_CONFDIR                  /etc/apache2
 ENV APACHE_ENVVARS                  $APACHE_CONFDIR/envvars
 ENV ABSOLUTE_APACHE_DOCUMENT_ROOT   /var/www/public/
+ENV APACHE_EXTENSIONS               "auth_digest ssl socache_shmcb"
 
 COPY 000-default.conf /etc/apache2/sites-available/000-default.conf
 
 WORKDIR /var/www
-
-RUN sudo chown -R docker:docker /var/www
 
 CMD ["./docker-cmd.sh"]

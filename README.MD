@@ -13,33 +13,44 @@ Based on this work:
 https://github.com/Nico31300/wos-245-gift-rewards
 
 ## Installation
-Clone from Github: https://github.com/daniel-kadosh/wos-245-gift-rewards-php
-
-Install Docker, PHP 8.3 and Composer.  Optional: SQlite3
-
-Run `wos.sh -r` to build docker + application.
-
-Further help:
-https://leafphp.dev/docs/introduction/installation.html
+* Clone from Github: https://github.com/daniel-kadosh/wos-245-gift-rewards-php
+* Host OS: Install Docker, and optionally SQlite3
+* Run `wos.sh -r` to build docker + application
+* Create login credentials for Apache:
+** Run `wos.sh -a` to launch the container
+** Run `wos.sh -u USERNAME` to create one (or more) users
 
 ## System dependencies
-Docker, PHP 8.3, Composer, SQLite3.
+Host OS:
+* Docker
+* SQlite3 optional, if you want to access the database from the host OS
 
-Leaf PHP microframework, using Laravel's Illuminate database management.
-Guzzle is used to make HTTP requests to the WOS API.
+Docker container:
+* Base docker image is a minimalist PHP 8.3 + Apache `8.3-v4-slim-apache`
+** https://github.com/thecodingmachine/docker-images-php
+* Apache 4.2
+* PHP 8.3
+* PHP Composer
+* SQLite3
 
-Base docker image is a minimalist PHP 8.3 + Apache `8.3-v4-slim-apache`
-https://github.com/thecodingmachine/docker-images-php
+App details:
+* Framework: Leaf PHP microframework
+* Database: SQlite3, with Laravel's Illuminate database management framework
+* HTTP requests: Guzzle
 
 ## Configuration
-* `.env.*` files define the Leaf app environment. `.env` gets overwritten when running `wos.sh -a [-p|d]`.
+* `.env.*` files define the Leaf app environment. NOTE: `.env` gets overwritten with some wos.sh commands.
 * `app/routes/_app.php` Defines URL routes
 * `app/controllers/WosController.php` Has the entire application logic
-* `wos.sh` script is a simple tool to build and manage the docker container,
-and will print out usage with no parameters.
-* `docker/Dockerfile` For the container build, exposing Apache on port 80
+* `wos.sh` script is a simple tool to build and manage the docker container.
+Run without parameters to get usage details.
+* `docker/Dockerfile` For the container build, exposing Apache on port 80 and 443
 * `docker/000-default.conf` Defines the apache vhost config
 * `docker/php.ini` Has extra PHP configs for both CLI and under Apache
+
+Runtime files:
+* `wos245/gift-rewards.db` SQLite3 database file
+* `wos245/apache-auth` Apache digest auth user file
 
 For more info from the Leaf PHP framework:
 https://leafphp.dev/docs/config/
@@ -54,6 +65,8 @@ Normal startup with `wos.sh -a` will run all DB migration scripts under
 `app/database/migrations/`
 
 ## Deployment instructions
-Run `wos.sh -a -p` to start with production environment, or `wos.sh -a -d` for dev/debug.
+Run `wos.sh -a -p` to start with production environment, or `wos.sh -a -d` for dev/debug environment.
+
+By default, digest auth is enabled in Apache and to create user(s) use `wosh.sh -u USERNAME`
 
 Run `wos-sh -o` to stop the docker container.
