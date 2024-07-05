@@ -444,8 +444,9 @@ Body3:
         $this->p('th, td, tr { padding: 2px; text-align: left; }'); // border: 1px solid grey
         $this->p('th { text-decoration: underline; }');
         #$this->p('th { border-bottom: 1px solid black; }');
-        $this->p('</style></head>');
-        $this->p('<body><h1>WOS #245 Gift Rewards</h1>');
+        $this->p('</style>');
+        $this->p('<meta name="robots" content="noindex,follow" />');
+        $this->p("</head>\n<body><h1>WOS #245 Gift Rewards</h1>");
         $this->p('<a href="/">Home</a>','p');
         if ($title) {
             $this->p($title,'h3');
