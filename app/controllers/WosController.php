@@ -18,8 +18,6 @@ class WosController extends Controller {
             'Last Message'      => 'last_message',
             'Last Update UTC'   => 'updated_at'
         ];
-    #const LIST_DIR      = ['asc','desc'];
-
 
     private $time = null;               // tick() DateTime object
     private $guz;                       // Guzzle HTTP client object
@@ -73,7 +71,9 @@ class WosController extends Controller {
                 $newDir,
                 $colName),'th');
         }
-        $this->p('</tr>');
+        $this->p('<th>Actions</th></tr>');
+        $actionFormat = '<input onclick="return removeConfirm(\'%s\')" '.
+                        'type="submit" value="%s" formmethod="get"/>';
         try {
             $all_players = db()
                 ->select('players')
@@ -105,6 +105,7 @@ class WosController extends Controller {
                             break;
                     }
                 }
+                $this->p(sprintf($actionFormat,'/remove/'.$p['id'],'Remove'),'th');
                 $this->p('</tr>');
             }
             $this->p('</table>');
@@ -493,6 +494,17 @@ Body3:
         $this->p('th { text-decoration: underline; }');
         #$this->p('th { border-bottom: 1px solid black; }');
         $this->p('</style>');
+        $this->p('<script type="text/javascript">');
+        $this->p("
+            function removeConfirm(url) {
+                if (confirm(url.concat(' Are you sure?'))) {
+                    location.href = url;
+                } else {
+                    return false;
+                }
+            }
+            ");
+        $this->p('</script>');
         $this->p('<meta name="robots" content="noindex,nofollow" />');
         $this->p("</head>\n<body><h1>WOS #245 Gift Rewards</h1>");
         $this->p('<a href="/">Home</a>','p');
