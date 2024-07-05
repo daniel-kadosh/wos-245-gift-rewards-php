@@ -9,8 +9,18 @@ use Leaf\Http\Request;
 use PDOException;
 
 class WosController extends Controller {
-    const HASH = "tB87#kPtkxqOS2";      // WOS API secret
-    const OUR_STATE = 245;              // State restriction
+    const HASH          = "tB87#kPtkxqOS2"; // WOS API secret
+    const OUR_STATE     = 245;              // State restriction
+    const LIST_COLUMNS  = [                 // Column labels to DB field names
+            'ID'                => 'id',
+            'Name'              => 'player_name',
+            'F#'                => 'stove_lv',
+            'Last Message'      => 'last_message',
+            'Last Update UTC'   => 'updated_at'
+        ];
+    #const LIST_DIR      = ['asc','desc'];
+
+
     private $time = null;               // tick() DateTime object
     private $guz;                       // Guzzle HTTP client object
 
@@ -41,28 +51,66 @@ class WosController extends Controller {
      */
     public function players() {
         $this->htmlHeader('== Player list');
+        $sort = strtolower(request()->params('sort','id' ));
+        $dir  = strtolower(request()->params('dir' ,'asc'));
+        if ( array_search($sort,self::LIST_COLUMNS,true) === false ) {
+            $this->p(" (Ignored invalid sort column $sort)");
+            $sort = 'id';
+        }
+        if ( array_search($dir,['asc','desc'],true) === false) {
+            $this->p(" (Ignored invalid sort direction $dir)");
+            $dir = 'asc';
+        }
+        $this->p('<table><tr><th width="20">#</th>');
+        $colFormat = '<a href="/players?sort=%s&dir=%s">%s</a>';
+        foreach (array_keys(self::LIST_COLUMNS) as $colName) {
+            $newDir = 'desc';
+            if ( $sort == self::LIST_COLUMNS[$colName] ) {
+                $newDir = ($dir=='asc' ? 'desc' : 'asc');
+            }
+            $this->p(sprintf($colFormat,
+                self::LIST_COLUMNS[$colName],
+                $newDir,
+                $colName),'th');
+        }
+        $this->p('</tr>');
         try {
             $all_players = db()
                 ->select('players')
-                ->orderBy('id','asc')
+                ->orderBy($sort,$dir)
                 ->all();
-                $this->p('<table>'.
-                '<tr><th>id</th><th>Name</th><th>F#</th>'.
-                '<th>Last message</th><th>Last Update UTC</th></tr>');
+            $n = 1;
             foreach ($all_players as $p) {
                 $this->p('<tr>');
-                $this->p($p['id'],'td');
-                $this->p('<img src="'.$p['avatar_image'].'" width="20"> <b>'.$p['player_name'].'</b>','td');
-                $this->p((strlen($p['stove_lv_content']) > 6 ?
-                        '<img src="'.$p['stove_lv_content'].'" width="30">' :
-                        'f'.$p['stove_lv']
-                    )
-                    ,'td');
-                $this->p($p['last_message'],'td');
-                $this->p($p['updated_at'],'td');
+                $this->p($n++.']','td');
+                foreach ( self::LIST_COLUMNS as $col ) {
+                    switch ($col) {
+                        case 'player_name' :
+                            $this->p('<img src="'.$p['avatar_image'].'" width="20"> <b>'.
+                                    $p['player_name'].'</b>','td');
+                            break;
+                        case 'stove_lv' :
+                            $this->p((strlen($p['stove_lv_content']) > 6 ?
+                                        '<img src="'.$p['stove_lv_content'].'" width="30">' :
+                                        'f'.$p['stove_lv']
+                                    ), 'td');
+                            break;
+                        case 'id' :
+                        case 'last_message' :
+                        case 'updated_at':
+                            $this->p($p[$col],'td');
+                            break;
+                        default:
+                            $this->p("Unknown column $col",'td');
+                            break;
+                    }
+                }
                 $this->p('</tr>');
             }
             $this->p('</table>');
+            if ( count($all_players)==0 ) {
+                $this->p('No players in the database!','p');
+            }
         } catch (PDOException $ex) {
             $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
         } catch (\Exception $ex) {
@@ -373,7 +421,7 @@ Body3:
     }
 
     private function guzzlePOST($url,$fid,$cdk='') {
-        $timestring = $this->getTimestring();
+        $timestring = $this->getTimestring(empty($cdk));
         $signRaw = ($cdk ? "cdk=$cdk&" : '').
             "fid=$fid&time=$timestring".self::HASH;
         if (_env('APP_DEBUG')=='true') {
@@ -445,7 +493,7 @@ Body3:
         $this->p('th { text-decoration: underline; }');
         #$this->p('th { border-bottom: 1px solid black; }');
         $this->p('</style>');
-        $this->p('<meta name="robots" content="noindex,follow" />');
+        $this->p('<meta name="robots" content="noindex,nofollow" />');
         $this->p("</head>\n<body><h1>WOS #245 Gift Rewards</h1>");
         $this->p('<a href="/">Home</a>','p');
         if ($title) {
