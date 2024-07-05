@@ -39,6 +39,7 @@ App details:
 * HTTP requests: Guzzle
 
 ## Configuration
+Docs from the Leaf PHP framework: https://leafphp.dev/docs/config/
 * `.env.*` files define the Leaf app environment. NOTE: `.env` gets overwritten with some wos.sh commands.
 * `app/routes/_app.php` Defines URL routes
 * `app/controllers/WosController.php` Has the entire application logic
@@ -51,9 +52,10 @@ Run without parameters to get usage details.
 Runtime files:
 * `wos245/gift-rewards.db` SQLite3 database file
 * `wos245/apache-auth` Apache digest auth user file
+* `wos245/valhalla245.duckdns.org/*` SSL certificates
 
-For more info from the Leaf PHP framework:
-https://leafphp.dev/docs/config/
+NOTE: this Git project's entire directory structure is mounted in the docker image as `/var/www`,
+and file changes in the host OS immediately take effect under the running container.
 
 ## Database creation
 `wos.sh -r` will create an empty SQlite3 db automatically if it doesn't exist.

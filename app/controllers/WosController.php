@@ -89,7 +89,7 @@ class WosController extends Controller {
             }
             foreach ($all_players as $p) {
                 // Verify player
-                $this->p('<p>'.$p['id'].' <b>'.$p['player_name'].'</b>: ');
+                $this->p('<p>'.$p['id'].' - <b>'.$p['player_name'].'</b>: ');
                 $tries = 2;
                 while ($tries>0) {
                     $signInResponse = $this->signIn($p['id']);
@@ -244,8 +244,11 @@ class WosController extends Controller {
                         if (_env('APP_DEBUG')=='true') {
                             $this->pDebug('INSERT ',$result);
                         }
+                        $this->p('Name <b>'.$data->nickname.'</b> inserted into database','p');
+                    } else {
+                        $this->p('IGNORED: <b>'.$data->nickname.
+                            '</b> is in invalid state $'.$data->kid,'p');
                     }
-                    $this->p('Name <b>'.$data->nickname.'</b> inserted into database','p');
                 }
             }
         } catch (PDOException $ex) {
@@ -460,3 +463,58 @@ Body3:
     }
 }
 
+/*
+========= log from signIn getting an HTTP 429 inside send():
+Form params:
+
+sign raw: fid=36257545&time=1720043353tB87#kPtkxqOS2
+sign md5: ea3a1b144633e2af096a706dd1eaeff7
+Headers: : Array
+(
+    [date] => Wed, 03 Jul 2024 21:49:49 GMT
+    [content-type] => text/html; charset=UTF-8
+    [transfer-encoding] => chunked
+    [connection] => keep-alive
+    [server] => nginx/1.16.1
+    [x-powered-by] => PHP/7.4.19
+    [cache-control] => no-cache, private
+    [access-control-allow-origin] => *
+)
+
+Body: :
+(Pausing due to 429 signIn rate limit)
+Form params:
+
+sign raw: fid=36257545&time=1720043353tB87#kPtkxqOS2
+sign md5: ea3a1b144633e2af096a706dd1eaeff7
+Headers: : Array
+(
+    [date] => Wed, 03 Jul 2024 21:50:51 GMT
+    [content-type] => application/json
+    [transfer-encoding] => chunked
+    [connection] => keep-alive
+    [server] => nginx/1.16.1
+    [x-powered-by] => PHP/7.4.19
+    [cache-control] => no-cache, private
+    [x-ratelimit-limit] => 30
+    [x-ratelimit-remaining] => 29
+    [access-control-allow-origin] => *
+)
+
+Body: : stdClass Object
+(
+    [code] => 0
+    [data] => stdClass Object
+        (
+            [fid] => 36257545
+            [nickname] => BabyImposter
+            [kid] => 245
+            [stove_lv] => 45
+            [stove_lv_content] => https://gof-formal-avatar.akamaized.net/img/icon/stove_lv_3.png
+            [avatar_image] => https://gof-formal-avatar.akamaized.net/avatar-dev/2023/07/17/1009.png
+        )
+
+    [msg] => success
+    [err_code] =>
+)
+*/

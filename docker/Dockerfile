@@ -5,6 +5,7 @@ FROM thecodingmachine/php:8.3-v4-slim-apache
 RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
     php8.3-sqlite3 sqlite3
 
+# https://leafphp.dev/docs/introduction/installation.html
 RUN composer global require leafs/cli
 RUN sudo ln -s /root/.composer/vendor/bin/leaf /usr/local/bin/leaf
 
