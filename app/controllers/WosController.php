@@ -62,7 +62,7 @@ class WosController extends Controller {
         $this->p('<table><tr><th width="20">#</th>');
         $colFormat = '<a href="/players?sort=%s&dir=%s">%s</a>';
         foreach (array_keys(self::LIST_COLUMNS) as $colName) {
-            $newDir = 'desc';
+            $newDir = 'asc';
             if ( $sort == self::LIST_COLUMNS[$colName] ) {
                 $newDir = ($dir=='asc' ? 'desc' : 'asc');
             }
@@ -75,6 +75,9 @@ class WosController extends Controller {
         $actionFormat = '<input onclick="return removeConfirm(\'%s\')" '.
                         'type="submit" value="%s" formmethod="get"/>';
         try {
+            if ($sort=='player_name') {
+                $sort = $sort.' COLLATE NOCASE';
+            }
             $all_players = db()
                 ->select('players')
                 ->orderBy($sort,$dir)
@@ -130,7 +133,7 @@ class WosController extends Controller {
         try {
             $all_players = db()
                 ->select('players')
-                ->where('last_message', 'not like', $giftCode)
+                ->where('last_message', 'not like', $giftCode.'%')
                 ->orderBy('id','asc')
                 ->all();
             if (count($all_players)==0) {
