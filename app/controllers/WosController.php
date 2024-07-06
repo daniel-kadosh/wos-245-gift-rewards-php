@@ -145,7 +145,7 @@ class WosController extends Controller {
                     $tries--;
                     if ($signInResponse['http-status']==429) {
                         // Hit rate limit!
-                        $this->p('(Pausing due to 429 signIn rate limit) ');
+                        $this->p('(Pausing 61sec due to 429 signIn rate limit) ');
                         sleep(61);
                     } else if ($signInResponse['http-status'] >= 400) {
                         $this->p('<b>WOS signIn API ERROR:</b> '.$signInResponse['guzExceptionMessage'],'p');
@@ -187,7 +187,7 @@ class WosController extends Controller {
                 }
 
                 // Send gift code
-                $tries = 2;
+                $tries = 3;
                 while ($tries>0) {
                     $giftResponse = $this->sendGiftCode($p['id'],$giftCode);
                     $tries--;
@@ -197,15 +197,28 @@ class WosController extends Controller {
                         $this->p('Aborting: Invalid gift code','b');
                         break 2;
                     }
-                    if ($giftResponse['http-status']==429) {
+                    $resetIn = 0;
+                    if ($giftErrCode == 40004) {
+                        $resetIn = 20;
+                        $msg = "Gift errCode=$giftErrCode";
+                    } else if ($giftResponse['http-status']==429) {
                         // Too many requests
-                        $ratelimitReset = $giftResponse['headers']['x-ratelimit-reset'];
-                        // Convert from UNIX time?
-                        $resetAt = (intval($ratelimitReset) == $ratelimitReset ?
-                                        tick("@$ratelimitReset") : tick());
-                        $resetIn = intval($ratelimitReset) - intval($this->getTimestring(false,true));
+                        if ( !empty($giftResponse['headers']['x-ratelimit-reset']) ) {
+                            $ratelimitReset = $giftResponse['headers']['x-ratelimit-reset'];
+                            // Convert from UNIX time?
+                            $resetAt = (intval($ratelimitReset) == $ratelimitReset ?
+                                            tick("@$ratelimitReset") : tick());
+                            $resetIn = intval($ratelimitReset) - intval($this->getTimestring(false,true));
+                        } else {
+                            $resetAt = tick();
+                            $ratelimitReset = -1;
+                        }
+                        // For sanity, until I see real values for x-ratelimit-reset
+                        if ( $resetIn < 1 || $resetIn > 65) {
+                            $resetIn = 21;
+                        }
                         //if (_env('APP_DEBUG')=='true') {
-                        // Force debug info for this case, as we haven't gotten to it.
+                        // Force debug info for this case, as we haven't seen this live.
                         // The 60sec sleep for a 429 in signIn above seems to have solved
                         // this whole issue, and we may not need to sleep here at all.
                             $this->pDebug('Headers: ',$giftResponse['headers']);
@@ -216,28 +229,41 @@ class WosController extends Controller {
                                 ." resetAt=".$resetAt->format('YYYY-MM-DD HH:mm:ss')
                                 ,'p');
                         //}
+                        $msg = "http 429 Too many attempts";
+                    }
+                    if ( $resetIn > 0 ) {
+                        $msg = "$msg: ".$giftResponse['msg']." - pausing $resetIn sec.";
+                        $this->p("($msg)");
                         db()->update('players')
                             ->params([
-                                'last_message'  =>"Too many attempts: Retry in $resetIn seconds",
+                                'last_message'  => $msg,
                                 'updated_at'    => $this->getTimestring(false,false)
                             ])
                             ->where(['id' => $p['id']])
                             ->execute();
-                        sleep(2); // ?? change to $resetIn
+                        sleep($resetIn);
                     } else if ($giftResponse['http-status'] >= 400) {
                         $this->p('<b>WOS gift API ERROR:</b> '.$giftResponse['guzExceptionMessage'],'p');
                     } else { // Success!
                         break;
                     }
                 }
-                $msg = ( $giftErrCode==20000 ? 'processed succesfully!' :
-                        ($giftErrCode==40008 ? 'gift code already used' :
-                                               "$giftErrCode ".$giftResponse['msg']) );
+                switch ($giftErrCode) {
+                    case 20000:
+                        $msg = "$giftCode: redeemed succesfully";
+                        break;
+                    case 40008:
+                        $msg = "$giftCode: gift code already used";
+                        break;
+                    default:
+                        $msg = "$giftErrCode ".$giftResponse['msg'];
+                        break;
+                }
                 $this->p("$msg</p>\n");
                 db()->update('players')
                     ->params([
-                        'last_message'  => "$giftCode: $msg",
-                        'updated_at'    => $this->getTimestring(false,false)
+                        'last_message'  => $msg,
+                        'updated_at'    => $this->getTimestring(true,false)
                     ])
                     ->where(['id' => $p['id']])
                     ->execute();
