@@ -34,18 +34,20 @@ class WosController extends Controller {
      * Default menu.
      */
     public function index() {
-        $this->htmlHeader();
-        $this->p('<ul>');
-        $this->p('Database players: <a href="/players">/players</a>'.
-            ' Can sort and download list, and one-click remove a player','li');
-        $this->p('Send a reward: <a href="/send/">/send/</a>[giftcode]'.
-            ' to send ALL players the giftcode.'.
-            ' NOTE: page will take 2-4 minutes to show anything','li');
-        $this->p('Add a player: <a href="/add/">/add/</a>[playerID]'.
-            ' Will get basic player info and check for state #'.self::OUR_STATE,'li');
-        $this->p('Remove a player: <a href="/remove/">/remove/</a>[playerID]'.
-            ' If you change your mind after remove, just add again','li');
-        $this->p('</ul>');
+        $this->htmlHeader('== Application capabilities:');
+        $this->p('<table style="margin-left:30px;">');
+        $lineFormat = '<td><li><a href="/%s">/%s</a>%s</li></td>'.
+                '<td><b>%s:</b> %s</td>';
+        $this->p(sprintf($lineFormat,'players','players','',
+            'Player list','Can sort and download list, plus one-click remove a player'),'tr');
+        $this->p(sprintf($lineFormat,'send/','send/','[giftcode]',
+            'Send a reward','to send ALL players the giftcode.'.
+            '<br/><b>NOTE:</b> page will take 2-5 minutes to show anything, let it run and wait!'),'tr');
+        $this->p(sprintf($lineFormat,'add/','add/','[playerID]',
+            'Add a player','Will get basic player info and check they are in state #'.self::OUR_STATE),'tr');
+        $this->p(sprintf($lineFormat,'remove/','remove/','[playerID]',
+            'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
+        $this->p('</table>');
         $this->htmlFooter();
     }
 
@@ -54,7 +56,7 @@ class WosController extends Controller {
      */
     public function players() {
         $this->htmlHeader('== Player list');
-        $sort = strtolower(request()->params('sort','id' ));
+        $sort = strtolower(request()->params('sort','player_name' ));
         $dir  = strtolower(request()->params('dir' ,'asc'));
         if ( array_search($sort,self::LIST_COLUMNS,true) === false ) {
             $this->p(" (Ignored invalid sort column $sort)");
@@ -524,7 +526,8 @@ Body3:
     ///////////////////////// View functions
     private function htmlHeader($title=null) {
         $this->p('<html><head><style>');
-        $this->p('th, td, tr { padding: 2px; text-align: left;}'); // border: 1px solid grey
+        $this->p('th, td { padding: 2px; text-align: left; vertical-align: middle; }');
+        $this->p('a { font-weight: bold; }');
         $this->p('th { text-decoration: underline; }');
         $this->p('</style>');
         $this->p('<script type="text/javascript">');
