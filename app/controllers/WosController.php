@@ -36,10 +36,15 @@ class WosController extends Controller {
     public function index() {
         $this->htmlHeader();
         $this->p('<ul>');
-        $this->p('Database players: <a href="/players">/players</a>','li');
-        $this->p('Send a reward: <a href="/send/">/send/</a>[giftcode]','li');
-        $this->p('Add a player: <a href="/add/">/add/</a>[playerID]','li');
-        $this->p('Remove a player: <a href="/remove/">/remove/</a>[playerID]','li');
+        $this->p('Database players: <a href="/players">/players</a>'.
+            ' Can sort and download list, and one-click remove a player','li');
+        $this->p('Send a reward: <a href="/send/">/send/</a>[giftcode]'.
+            ' to send ALL players the giftcode.'.
+            ' NOTE: page will take 2-4 minutes to show anything','li');
+        $this->p('Add a player: <a href="/add/">/add/</a>[playerID]'.
+            ' Will get basic player info and check for state #'.self::OUR_STATE,'li');
+        $this->p('Remove a player: <a href="/remove/">/remove/</a>[playerID]'.
+            ' If you change your mind after remove, just add again','li');
         $this->p('</ul>');
         $this->htmlFooter();
     }
@@ -519,27 +524,52 @@ Body3:
     ///////////////////////// View functions
     private function htmlHeader($title=null) {
         $this->p('<html><head><style>');
-        $this->p('th, td, tr { padding: 2px; text-align: left; }'); // border: 1px solid grey
+        $this->p('th, td, tr { padding: 2px; text-align: left;}'); // border: 1px solid grey
         $this->p('th { text-decoration: underline; }');
-        #$this->p('th { border-bottom: 1px solid black; }');
         $this->p('</style>');
         $this->p('<script type="text/javascript">');
         $this->p("
             function removeConfirm(url) {
-                if (confirm(url.concat(' Are you sure?'))) {
+                if (confirm(`\${url} Are you sure?`)) {
                     location.href = url;
                 } else {
                     return false;
                 }
             }
+            function formConfirm(action,idField) {
+                id = document.getElementById(idField).value;
+                if (!id) {
+                    return false;
+                }
+                url = `/\${action}/\${id}`;
+                removeConfirm(url);
+                return false;
+            }
             ");
         $this->p('</script>');
         $this->p('<meta name="robots" content="noindex,nofollow" />');
-        $this->p("</head>\n<body><h1>WOS #245 Gift Rewards</h1>");
-        $this->p('<a href="/">Home</a>','p');
+        $this->p("</head>\n<body>");
+        $this->p("WOS #245 Gift Rewards",'h1');
+
+        $this->p('<table><tr >');
+        $this->p('<a href="/">Home</a>','td');
+        $this->p('| <a href="/players">Players</a>','td');
+        $this->p('|','td');
+        $this->p($this->menuForm('Add'),'td');
+        $this->p('|','td');
+        $this->p($this->menuForm('Remove'),'td');
+        $this->p('</tr></table>');
         if ($title) {
             $this->p($title,'h3');
         }
+    }
+    private function menuForm($action) {
+        $lAction = strtolower($action);
+        $idField = $lAction.'Id';
+        return "<form onsubmit=\"return formConfirm('$lAction','$idField');\">".
+                "<input type=\"text\" id=\"$idField\" name=\"$idField\" size=\"10\">".
+                "<button value=\"$action\">$action</button>".
+                '</form>';
     }
     private function htmlFooter() {
         $this->p('</body></html>');
