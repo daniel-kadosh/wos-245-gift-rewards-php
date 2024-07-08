@@ -4,7 +4,6 @@ namespace App\Controllers;
 
 use GuzzleHttp\Client;
 use Leaf\Controller;
-use Leaf\Date;
 use Leaf\Http\Request;
 use PDOException;
 
@@ -47,7 +46,15 @@ class WosController extends Controller {
             'Add a player','Will get basic player info and check they are in state #'.self::OUR_STATE),'tr');
         $this->p(sprintf($lineFormat,'remove/','remove/','[playerID]',
             'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
-        $this->p('</table>');
+        $this->p(sprintf($lineFormat,'download','download/','[format]',
+            'Download player DB','Supported formats: <b>csv</b>, <b>json</b>, <b>curl</b> (bash script to re-add users)'),'tr');
+        $this->p('<td colspan="2">&nbsp;</td>','tr'); // empty row
+        $this->p('<tr><td colspan="2">');
+        $this->p('<a href="https://github.com/daniel-kadosh/wos-245-gift-rewards-php" target="_blank">'.
+                'Github</a>'
+            );
+        $this->p(file_get_contents('git-info'),'pre');
+        $this->p('</td></tr></table>');
         $this->htmlFooter();
     }
 
@@ -85,12 +92,12 @@ class WosController extends Controller {
             if ($sort=='player_name') {
                 $sort = $sort.' COLLATE NOCASE';
             }
-            $all_players = db()
+            $allPlayers = db()
                 ->select('players')
                 ->orderBy($sort,$dir)
                 ->all();
             $n = 1;
-            foreach ($all_players as $p) {
+            foreach ($allPlayers as $p) {
                 $this->p('<tr>');
                 $this->p($n++.']','td');
                 foreach ( self::LIST_COLUMNS as $col ) {
@@ -358,11 +365,97 @@ class WosController extends Controller {
         $this->htmlFooter();
     }
 
+    /**
+     * Download CSV or XLS of database
+     */
+    public function download($fileFormat = '') {
+        $formats = [
+            'csv'   => ['ct' => 'text/csv',         'ext' => 'csv' ],
+            'json'  => ['ct' => 'application/json', 'ext' => 'json'],
+            'curl'  => ['ct' => 'text/plain',       'ext' => 'sh'  ]
+        ];
+        $format = trim(strtolower($fileFormat));
+
+        // Usage if no format in URL
+        if (empty($fileFormat) || array_search($fileFormat,array_keys($formats),true)===false) {
+            $this->htmlHeader('== Download player database');
+            if (!empty($fileFormat)) {
+                $this->p('<b>Invalid format:</b> '.$fileFormat,'p');
+            }
+            $this->p('Formats supported:','b');
+            $this->p('<table style="margin-left:30px;">');
+            $lineFormat = '<td><li><a href="/download/%s">/download/%s</a></li></td>'.
+                    '<td>- %s</td>';
+            $this->p(sprintf($lineFormat,'csv','csv',
+                'Standard CSV file'),'tr');
+            $this->p(sprintf($lineFormat,'json','json',
+                'File with each line as 1 row of the database as a JSON string'),'tr');
+            $this->p(sprintf($lineFormat,'curl','curl',
+                'Bash script with curl calls to add players into the database (DB backup of sorts)'),'tr');
+            $this->p('</table>');
+            $this->htmlFooter();
+            return;
+        }
+
+        // Handle download header + content carefully, without any HTML
+        response()->withHeader([
+                'Content-Type'        => $formats[$fileFormat]['ct'],
+                'Content-Disposition' => sprintf(
+                        'attachment; filename="wos245players_%s.%s"',
+                        substr($this->getTimestring(true,false),0,10),
+                        $formats[$fileFormat]['ext']
+                    )
+            ])->sendHeaders();
+        $allPlayers = db()
+            ->select('players')
+            ->orderBy('id','asc')
+            ->all();
+
+        // PHP to handle output buffering
+        ob_start();
+        switch ($format) {
+            case 'json':
+                foreach ($allPlayers as $p) {
+                    print json_encode($p)."\n";
+                }
+                break;
+            case 'csv':
+                $stdout = fopen('php://output', 'w');
+                $n = 0;
+                foreach ($allPlayers as $p) {
+                    if ($n++ == 0) {
+                        fputcsv($stdout,array_keys($p));
+                    }
+                    fputcsv($stdout,$p);
+                }
+                break;
+            case 'curl':
+                print "#!/bin/bash\n# Script to add all users\n\n";
+                $curlAuth = '--digest -u "wos245valhalla:divergent"';
+                $curlUrl = rtrim(_env('APP_URL'),'/');
+                $n = 1;
+                foreach ($allPlayers as $p) {
+                    printf("curl -s %s/add/%d %s | grep -e '^<p>'\n",
+                        $curlUrl, $p['id'], $curlAuth);
+                    if ( $n++ % 29 == 0) {
+                        print "sleep 61\n";
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+        ob_flush();
+        #ob_end_clean();
+        #response()->send();
+    }
+
     ///////////////////////// Helper functions
     private function validateId($player_id) {
         if (!empty($player_id)) {
+            $player_id = trim($player_id);
             $int_id = abs(intval($player_id));
-            if ($int_id > 0 && $int_id <= PHP_INT_MAX 
+            if ($int_id > 0 && $int_id <= PHP_INT_MAX
                 && "$int_id" == "$player_id" )
             {
                 return $int_id;
@@ -371,6 +464,7 @@ class WosController extends Controller {
         response()->exit('Invalid ID '.$player_id,400);
     }
     private function validateGiftCode($giftCode) {
+        $giftCode = trim($giftCode);
         if (!empty($giftCode) && strlen($giftCode)>4) {
             if (!is_integer($giftCode) && !strpbrk($giftCode,' _/\\|}{][^$')) {
                 return $giftCode;
@@ -414,7 +508,7 @@ class WosController extends Controller {
         "stove_lv":10,"stove_lv_content":10,
         "avatar_image":"https:\/\/gof-formal-avatar.akamaized.net\/avatar-dev\/2023\/07\/17\/1001.png"},
         "msg":"success","err_code":""}
-*/        
+*/
         return $this->guzzlePOST(
             'https://wos-giftcode-api.centurygame.com/api/player',
             $fid

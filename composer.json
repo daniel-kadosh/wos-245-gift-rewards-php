@@ -31,8 +31,7 @@
         "leafs/db": "*",
         "leafs/fetch": "^0.1.0",
         "leafs/date": "^2.0",
-        "guzzlehttp/guzzle": "^7.0",
-        "phpoffice/phpspreadsheet": "^2.1"
+        "guzzlehttp/guzzle": "^7.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.16"

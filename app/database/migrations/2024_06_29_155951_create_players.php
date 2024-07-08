@@ -19,13 +19,13 @@ class CreatePlayers extends Database
         if (!static::$capsule::schema()->hasTable("players")) {
             static::$capsule::schema()->create("players", function (Blueprint $table) {
                 $table->integer('id')->primary();
-         		$table->string('player_name');
+                $table->string('player_name');
                 $table->string('last_message');
                 $table->string('avatar_image');
                 $table->integer('stove_lv');
                 $table->string('stove_lv_content');
                 $table->timestamps(); // created_at, updated_at
-         	});
+            });
         }
     }
 

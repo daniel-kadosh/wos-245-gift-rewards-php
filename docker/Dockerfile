@@ -1,5 +1,5 @@
 # https://github.com/thecodingmachine/docker-images-php
-ARG PHP_EXTENSIONS="sqlite3 pdo_sqlite gd"
+ARG PHP_EXTENSIONS="sqlite3 pdo_sqlite"
 FROM thecodingmachine/php:8.3-v4-slim-apache
 
 ######## PHP + Composer config
