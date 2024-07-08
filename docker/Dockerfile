@@ -1,10 +1,8 @@
 # https://github.com/thecodingmachine/docker-images-php
+ARG PHP_EXTENSIONS="sqlite3 pdo_sqlite gd"
 FROM thecodingmachine/php:8.3-v4-slim-apache
 
 ######## PHP + Composer config
-RUN sudo apt-get update && sudo apt-get install -y --no-install-recommends \
-    php8.3-sqlite3 sqlite3
-
 # https://leafphp.dev/docs/introduction/installation.html
 RUN composer global require leafs/cli
 RUN sudo ln -s /root/.composer/vendor/bin/leaf /usr/local/bin/leaf
@@ -12,10 +10,6 @@ RUN sudo ln -s /root/.composer/vendor/bin/leaf /usr/local/bin/leaf
 # Extra config for PHP.ini
 COPY ./php.ini /etc/php/8.3/cli/conf.d/99-wos245.ini
 COPY ./php.ini /etc/php/8.3/apache2/conf.d/99-wos245.ini
-
-RUN sudo apt-get autoremove -y \
-    && sudo apt-get clean \
-    && sudo rm -rf /var/lib/apt/lists/* /tmp/*
 
 ######## Apache config
 EXPOSE 80/tcp 443/tcp

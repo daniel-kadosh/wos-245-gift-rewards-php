@@ -3,14 +3,14 @@
 WOS-245 Gift Rewards (PHP version)
 
 ## App Info
+Application is based on this work:
+https://github.com/Nico31300/wos-245-gift-rewards
+
 Crude website/API to send Whiteout Survival gift codes to members of an alliance in State #245.
 Main index page has links to list and manage player IDs.
 
 Written in PHP 8 with the Leaf microframework:
 https://leafphp.dev/docs/introduction/
-
-Based on this work:
-https://github.com/Nico31300/wos-245-gift-rewards
 
 ## Installation
 * Clone from Github: https://github.com/daniel-kadosh/wos-245-gift-rewards-php
@@ -35,8 +35,9 @@ Docker container:
 
 App details:
 * Framework: Leaf PHP microframework
-* Database: SQlite3, with Laravel's Illuminate database management framework
-* HTTP requests: Guzzle
+* Database: SQlite3, with Laravel's Illuminate DB imported with Leaf
+* HTTP requests: Guzzle https://docs.guzzlephp.org/en/stable/
+* XLS/CSV export: PHPSpreadsheet https://phpspreadsheet.readthedocs.io/en/latest/
 
 ## Configuration
 Docs from the Leaf PHP framework: https://leafphp.dev/docs/config/

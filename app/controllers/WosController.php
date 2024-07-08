@@ -9,8 +9,16 @@ use Leaf\Http\Request;
 use PDOException;
 
 class WosController extends Controller {
-    const HASH = "tB87#kPtkxqOS2";      // WOS API secret
-    const OUR_STATE = 245;              // State restriction
+    const HASH          = "tB87#kPtkxqOS2"; // WOS API secret
+    const OUR_STATE     = 245;              // State restriction
+    const LIST_COLUMNS  = [                 // Column labels to DB field names
+            'ID'                => 'id',
+            'Name'              => 'player_name',
+            'F#'                => 'stove_lv',
+            'Last Message'      => 'last_message',
+            'Last Update UTC'   => 'updated_at'
+        ];
+
     private $time = null;               // tick() DateTime object
     private $guz;                       // Guzzle HTTP client object
 
@@ -26,13 +34,20 @@ class WosController extends Controller {
      * Default menu.
      */
     public function index() {
-        $this->htmlHeader();
-        $this->p('<ul>');
-        $this->p('Database players: <a href="/players">/players</a>','li');
-        $this->p('Send a reward: <a href="/send/">/send/</a>[giftcode]','li');
-        $this->p('Add a player: <a href="/add/">/add/</a>[playerID]','li');
-        $this->p('Remove a player: <a href="/remove/">/remove/</a>[playerID]','li');
-        $this->p('</ul>');
+        $this->htmlHeader('== Application capabilities:');
+        $this->p('<table style="margin-left:30px;">');
+        $lineFormat = '<td><li><a href="/%s">/%s</a>%s</li></td>'.
+                '<td><b>%s:</b> %s</td>';
+        $this->p(sprintf($lineFormat,'players','players','',
+            'Player list','Can sort and download list, plus one-click remove a player'),'tr');
+        $this->p(sprintf($lineFormat,'send/','send/','[giftcode]',
+            'Send a reward','to send ALL players the giftcode.'.
+            '<br/><b>NOTE:</b> page will take 2-5 minutes to show anything, let it run and wait!'),'tr');
+        $this->p(sprintf($lineFormat,'add/','add/','[playerID]',
+            'Add a player','Will get basic player info and check they are in state #'.self::OUR_STATE),'tr');
+        $this->p(sprintf($lineFormat,'remove/','remove/','[playerID]',
+            'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
+        $this->p('</table>');
         $this->htmlFooter();
     }
 
@@ -41,28 +56,72 @@ class WosController extends Controller {
      */
     public function players() {
         $this->htmlHeader('== Player list');
+        $sort = strtolower(request()->params('sort','player_name' ));
+        $dir  = strtolower(request()->params('dir' ,'asc'));
+        if ( array_search($sort,self::LIST_COLUMNS,true) === false ) {
+            $this->p(" (Ignored invalid sort column $sort)");
+            $sort = 'id';
+        }
+        if ( array_search($dir,['asc','desc'],true) === false) {
+            $this->p(" (Ignored invalid sort direction $dir)");
+            $dir = 'asc';
+        }
+        $this->p('<table><tr><th width="20">#</th>');
+        $colFormat = '<a href="/players?sort=%s&dir=%s">%s</a>';
+        foreach (array_keys(self::LIST_COLUMNS) as $colName) {
+            $newDir = 'asc';
+            if ( $sort == self::LIST_COLUMNS[$colName] ) {
+                $newDir = ($dir=='asc' ? 'desc' : 'asc');
+            }
+            $this->p(sprintf($colFormat,
+                self::LIST_COLUMNS[$colName],
+                $newDir,
+                $colName),'th');
+        }
+        $this->p('<th>Actions</th></tr>');
+        $actionFormat = '<input onclick="return removeConfirm(\'%s\')" '.
+                        'type="submit" value="%s" formmethod="get"/>';
         try {
+            if ($sort=='player_name') {
+                $sort = $sort.' COLLATE NOCASE';
+            }
             $all_players = db()
                 ->select('players')
-                ->orderBy('id','asc')
+                ->orderBy($sort,$dir)
                 ->all();
-                $this->p('<table>'.
-                '<tr><th>id</th><th>Name</th><th>F#</th>'.
-                '<th>Last message</th><th>Last Update UTC</th></tr>');
+            $n = 1;
             foreach ($all_players as $p) {
                 $this->p('<tr>');
-                $this->p($p['id'],'td');
-                $this->p('<img src="'.$p['avatar_image'].'" width="20"> <b>'.$p['player_name'].'</b>','td');
-                $this->p((strlen($p['stove_lv_content']) > 6 ?
-                        '<img src="'.$p['stove_lv_content'].'" width="30">' :
-                        'f'.$p['stove_lv']
-                    )
-                    ,'td');
-                $this->p($p['last_message'],'td');
-                $this->p($p['updated_at'],'td');
+                $this->p($n++.']','td');
+                foreach ( self::LIST_COLUMNS as $col ) {
+                    switch ($col) {
+                        case 'player_name' :
+                            $this->p('<img src="'.$p['avatar_image'].'" width="20"> <b>'.
+                                    $p['player_name'].'</b>','td');
+                            break;
+                        case 'stove_lv' :
+                            $this->p((strlen($p['stove_lv_content']) > 6 ?
+                                        '<img src="'.$p['stove_lv_content'].'" width="30">' :
+                                        'f'.$p['stove_lv']
+                                    ), 'td');
+                            break;
+                        case 'id' :
+                        case 'last_message' :
+                        case 'updated_at':
+                            $this->p($p[$col],'td');
+                            break;
+                        default:
+                            $this->p("Unknown column $col",'td');
+                            break;
+                    }
+                }
+                $this->p(sprintf($actionFormat,'/remove/'.$p['id'],'Remove'),'th');
                 $this->p('</tr>');
             }
             $this->p('</table>');
+            if ( count($all_players)==0 ) {
+                $this->p('No players in the database!','p');
+            }
         } catch (PDOException $ex) {
             $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
         } catch (\Exception $ex) {
@@ -81,7 +140,7 @@ class WosController extends Controller {
         try {
             $all_players = db()
                 ->select('players')
-                ->where('last_message', 'not like', $giftCode)
+                ->where('last_message', 'not like', $giftCode.'%')
                 ->orderBy('id','asc')
                 ->all();
             if (count($all_players)==0) {
@@ -96,7 +155,7 @@ class WosController extends Controller {
                     $tries--;
                     if ($signInResponse['http-status']==429) {
                         // Hit rate limit!
-                        $this->p('(Pausing due to 429 signIn rate limit) ');
+                        $this->p('(Pausing 61sec due to 429 signIn rate limit) ');
                         sleep(61);
                     } else if ($signInResponse['http-status'] >= 400) {
                         $this->p('<b>WOS signIn API ERROR:</b> '.$signInResponse['guzExceptionMessage'],'p');
@@ -138,7 +197,7 @@ class WosController extends Controller {
                 }
 
                 // Send gift code
-                $tries = 2;
+                $tries = 3;
                 while ($tries>0) {
                     $giftResponse = $this->sendGiftCode($p['id'],$giftCode);
                     $tries--;
@@ -148,15 +207,28 @@ class WosController extends Controller {
                         $this->p('Aborting: Invalid gift code','b');
                         break 2;
                     }
-                    if ($giftResponse['http-status']==429) {
+                    $resetIn = 0;
+                    if ($giftErrCode == 40004) {
+                        $resetIn = 20;
+                        $msg = "Gift errCode=$giftErrCode";
+                    } else if ($giftResponse['http-status']==429) {
                         // Too many requests
-                        $ratelimitReset = $giftResponse['headers']['x-ratelimit-reset'];
-                        // Convert from UNIX time?
-                        $resetAt = (intval($ratelimitReset) == $ratelimitReset ?
-                                        tick("@$ratelimitReset") : tick());
-                        $resetIn = intval($ratelimitReset) - intval($this->getTimestring(false,true));
+                        if ( !empty($giftResponse['headers']['x-ratelimit-reset']) ) {
+                            $ratelimitReset = $giftResponse['headers']['x-ratelimit-reset'];
+                            // Convert from UNIX time?
+                            $resetAt = (intval($ratelimitReset) == $ratelimitReset ?
+                                            tick("@$ratelimitReset") : tick());
+                            $resetIn = intval($ratelimitReset) - intval($this->getTimestring(false,true));
+                        } else {
+                            $resetAt = tick();
+                            $ratelimitReset = -1;
+                        }
+                        // For sanity, until I see real values for x-ratelimit-reset
+                        if ( $resetIn < 1 || $resetIn > 65) {
+                            $resetIn = 21;
+                        }
                         //if (_env('APP_DEBUG')=='true') {
-                        // Force debug info for this case, as we haven't gotten to it.
+                        // Force debug info for this case, as we haven't seen this live.
                         // The 60sec sleep for a 429 in signIn above seems to have solved
                         // this whole issue, and we may not need to sleep here at all.
                             $this->pDebug('Headers: ',$giftResponse['headers']);
@@ -167,28 +239,41 @@ class WosController extends Controller {
                                 ." resetAt=".$resetAt->format('YYYY-MM-DD HH:mm:ss')
                                 ,'p');
                         //}
+                        $msg = "http 429 Too many attempts";
+                    }
+                    if ( $resetIn > 0 ) {
+                        $msg = "$msg: ".$giftResponse['msg']." - pausing $resetIn sec.";
+                        $this->p("($msg)");
                         db()->update('players')
                             ->params([
-                                'last_message'  =>"Too many attempts: Retry in $resetIn seconds",
+                                'last_message'  => $msg,
                                 'updated_at'    => $this->getTimestring(false,false)
                             ])
                             ->where(['id' => $p['id']])
                             ->execute();
-                        sleep(2); // ?? change to $resetIn
+                        sleep($resetIn);
                     } else if ($giftResponse['http-status'] >= 400) {
                         $this->p('<b>WOS gift API ERROR:</b> '.$giftResponse['guzExceptionMessage'],'p');
                     } else { // Success!
                         break;
                     }
                 }
-                $msg = ( $giftErrCode==20000 ? 'processed succesfully!' :
-                        ($giftErrCode==40008 ? 'gift code already used' :
-                                               "$giftErrCode ".$giftResponse['msg']) );
+                switch ($giftErrCode) {
+                    case 20000:
+                        $msg = "$giftCode: redeemed succesfully";
+                        break;
+                    case 40008:
+                        $msg = "$giftCode: gift code already used";
+                        break;
+                    default:
+                        $msg = "$giftErrCode ".$giftResponse['msg'];
+                        break;
+                }
                 $this->p("$msg</p>\n");
                 db()->update('players')
                     ->params([
-                        'last_message'  => "$giftCode: $msg",
-                        'updated_at'    => $this->getTimestring(false,false)
+                        'last_message'  => $msg,
+                        'updated_at'    => $this->getTimestring(true,false)
                     ])
                     ->where(['id' => $p['id']])
                     ->execute();
@@ -373,7 +458,7 @@ Body3:
     }
 
     private function guzzlePOST($url,$fid,$cdk='') {
-        $timestring = $this->getTimestring();
+        $timestring = $this->getTimestring(empty($cdk));
         $signRaw = ($cdk ? "cdk=$cdk&" : '').
             "fid=$fid&time=$timestring".self::HASH;
         if (_env('APP_DEBUG')=='true') {
@@ -441,16 +526,53 @@ Body3:
     ///////////////////////// View functions
     private function htmlHeader($title=null) {
         $this->p('<html><head><style>');
-        $this->p('th, td, tr { padding: 2px; text-align: left; }'); // border: 1px solid grey
+        $this->p('th, td { padding: 2px; text-align: left; vertical-align: middle; }');
+        $this->p('a { font-weight: bold; }');
         $this->p('th { text-decoration: underline; }');
-        #$this->p('th { border-bottom: 1px solid black; }');
         $this->p('</style>');
-        $this->p('<meta name="robots" content="noindex,follow" />');
-        $this->p("</head>\n<body><h1>WOS #245 Gift Rewards</h1>");
-        $this->p('<a href="/">Home</a>','p');
+        $this->p('<script type="text/javascript">');
+        $this->p("
+            function removeConfirm(url) {
+                if (confirm(`\${url} Are you sure?`)) {
+                    location.href = url;
+                } else {
+                    return false;
+                }
+            }
+            function formConfirm(action,idField) {
+                id = document.getElementById(idField).value;
+                if (!id) {
+                    return false;
+                }
+                url = `/\${action}/\${id}`;
+                removeConfirm(url);
+                return false;
+            }
+            ");
+        $this->p('</script>');
+        $this->p('<meta name="robots" content="noindex,nofollow" />');
+        $this->p("</head>\n<body>");
+        $this->p("WOS #245 Gift Rewards",'h1');
+
+        $this->p('<table><tr >');
+        $this->p('<a href="/">Home</a>','td');
+        $this->p('| <a href="/players">Players</a>','td');
+        $this->p('|','td');
+        $this->p($this->menuForm('Add'),'td');
+        $this->p('|','td');
+        $this->p($this->menuForm('Remove'),'td');
+        $this->p('</tr></table>');
         if ($title) {
             $this->p($title,'h3');
         }
+    }
+    private function menuForm($action) {
+        $lAction = strtolower($action);
+        $idField = $lAction.'Id';
+        return "<form onsubmit=\"return formConfirm('$lAction','$idField');\">".
+                "<input type=\"text\" id=\"$idField\" name=\"$idField\" size=\"10\">".
+                "<button value=\"$action\">$action</button>".
+                '</form>';
     }
     private function htmlFooter() {
         $this->p('</body></html>');
