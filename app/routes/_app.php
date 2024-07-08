@@ -13,6 +13,9 @@ app()->get('/add/{player_id}', "WosController@add");
 app()->get('/remove/{player_id}', "WosController@remove");
 app()->get("/send/{gift_code}", "WosController@send");
 
+app()->get("/download/{fileFormat}", "WosController@download");
+app()->get("/download", "WosController@download");
+
 // Debugging...
 if (_env('APP_DEBUG')=='true') {
     app()->get("/pi", function() {

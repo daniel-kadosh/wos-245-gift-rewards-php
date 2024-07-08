@@ -109,7 +109,7 @@ function wos-user() {
         OPT="-c"
     fi
     set -x
-    sudo docker compose exec ${DOCKER_APP_NAME} htdigest ${OPT} /var/www/${APACHE_AUTH_FILE} wos245 ${HTUSER}
+    sudo docker compose exec ${DOCKER_APP_NAME} htdigest ${OPT} ${APACHE_AUTH_FILE} wos245 ${HTUSER}
     echo "== Resulting Apache digest auth file:"
     cat ${APACHE_AUTH_FILE}
 }

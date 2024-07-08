@@ -35,7 +35,7 @@ Docker container:
 
 App details:
 * Framework: Leaf PHP microframework
-* Database: SQlite3, with Laravel's Illuminate DB imported with Leaf
+* Database: SQlite3, with Laravel's Eloquent DB imported with Leaf
 * HTTP requests: Guzzle https://docs.guzzlephp.org/en/stable/
 * XLS/CSV export: PHPSpreadsheet https://phpspreadsheet.readthedocs.io/en/latest/
 
