@@ -430,8 +430,14 @@ class WosController extends Controller {
                 }
                 break;
             case 'curl':
-                print "#!/bin/bash\n# Script to add all users\n\n";
-                $curlAuth = '--digest -u "wos245valhalla:divergent"';
+		print   "#!/bin/bash\n".
+			"# Script to add all users\n".
+			"DIGEST_AUTH='username:password'\n".
+			"if [ \"\${DIGEST_AUTH}\" == \"username:password\" ]; then\n".
+			"    echo 'Please edit this file and update with your credentials'\n".
+			"    exit 1\n".
+			"fi\n\n";
+                $curlAuth = '--digest -u "${DIGEST_AUTH}"';
                 $curlUrl = rtrim(_env('APP_URL'),'/');
                 $n = 1;
                 foreach ($allPlayers as $p) {
