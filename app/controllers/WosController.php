@@ -126,7 +126,7 @@ class WosController extends Controller {
                 $this->p('</tr>');
             }
             $this->p('</table>');
-            if ( count($all_players)==0 ) {
+            if ( count($allPlayers)==0 ) {
                 $this->p('No players in the database!','p');
             }
         } catch (PDOException $ex) {
@@ -143,17 +143,17 @@ class WosController extends Controller {
     public function send($giftCode) {
         $this->validateGiftCode($giftCode);
         $this->htmlHeader('== Send Gift Code');
-        $this->p("Sending <b>$giftCode</b> to all players:",'p');
+        $this->p("Sending <b>$giftCode</b> to all players that haven't received it:",'p');
         try {
-            $all_players = db()
+            $allPlayers = db()
                 ->select('players')
                 ->where('last_message', 'not like', $giftCode.'%')
                 ->orderBy('id','asc')
                 ->all();
-            if (count($all_players)==0) {
+            if (count($allPlayers)==0) {
                 $this->p('No players in the database that still need that gift code.','p');
             }
-            foreach ($all_players as $p) {
+            foreach ($allPlayers as $p) {
                 // Verify player
                 $this->p('<p>'.$p['id'].' - <b>'.$p['player_name'].'</b>: ');
                 $tries = 2;
@@ -655,17 +655,20 @@ Body3:
         $this->p($this->menuForm('Add'),'td');
         $this->p('|','td');
         $this->p($this->menuForm('Remove'),'td');
+        $this->p('|','td');
+        $this->p($this->menuForm('Send','Send giftcode'),'td');
         $this->p('</tr></table>');
         if ($title) {
             $this->p($title,'h3');
         }
     }
-    private function menuForm($action) {
+    private function menuForm($action,$buttonName='') {
         $lAction = strtolower($action);
+	if (empty($buttonName)) { $buttonName = $action; }
         $idField = $lAction.'Id';
         return "<form onsubmit=\"return formConfirm('$lAction','$idField');\">".
                 "<input type=\"text\" id=\"$idField\" name=\"$idField\" size=\"10\">".
-                "<button value=\"$action\">$action</button>".
+                "<button value=\"$action\">$buttonName</button>".
                 '</form>';
     }
     private function htmlFooter() {
