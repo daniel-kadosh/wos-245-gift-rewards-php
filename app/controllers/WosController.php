@@ -153,69 +153,104 @@ class WosController extends Controller {
             if (count($allPlayers)==0) {
                 $this->p('No players in the database that still need that gift code.','p');
             }
+            // Max bad responses (network error) from API before abort
+            $badResponsesLeft = 3;
             foreach ($allPlayers as $p) {
                 // Verify player
                 $this->p('<p>'.$p['id'].' - <b>'.$p['player_name'].'</b>: ');
-                $tries = 2;
-                while ($tries>0) {
+                $tries = 5;
+                $signInGood = false;
+                while ($tries>0 && $badResponsesLeft>0) {
                     $signInResponse = $this->signIn($p['id']);
                     $tries--;
-                    if ($signInResponse['http-status']==429) {
+                    if (empty($signInResponse['http-status'])) {
+                        // Timeout or network error
+                        $this->p('(Network error: '.$signInResponse['guzExceptionMessage'].') ');
+                        $badResponsesLeft--;
+                        sleep(2);
+                    } else if ($signInResponse['http-status']==429) {
                         // Hit rate limit!
                         $this->p('(Pausing 61sec due to 429 signIn rate limit) ');
                         sleep(61);
                     } else if ($signInResponse['http-status'] >= 400) {
-                        $this->p('<b>WOS signIn API ERROR:</b> '.$signInResponse['guzExceptionMessage'],'p');
+                        $this->p('<b>ABORT: WOS signIn API ERROR:</b> '.$signInResponse['guzExceptionMessage'],'p');
                         break 2;
                     } else {
                         // All good!
+                        $signInGood = true;
                         break;
                     }
                 }
-                $s = $signInResponse['data'];
-                $state = empty($s->kid) ? 0 : $s->kid;
-                if ($state!=self::OUR_STATE || $signInResponse['err_code'] == 40004) {
-                    $this->p('DELETING player: invalid user or state</p>');
+                if ( ! $signInGood ) {
+                    $this->p("<b>ABORT:</b> Failed to sign in player</p>");
+                    break;
+                }
+                $sd = $signInResponse['data'];
+                if ($sd->kid!=self::OUR_STATE || $signInResponse['err_code'] == 40004) {
+                    // 40004 = Player doesn't exist
+                    $this->p('DELETING player: invalid user or state (#'.$sd->kid.')</p>');
                     $this->deletePlayer($p['id']);
                     continue;
                 }
 
                 // Update player if needed
-                if ( $p['player_name']      != $s->nickname ||
-                    $p['avatar_image']      != $s->avatar_image ||
-                    $p['stove_lv']          != $s->stove_lv ||
-                    $p['stove_lv_content']  != $s->stove_lv_content )
+                if ( $p['player_name']      != $sd->nickname ||
+                    $p['avatar_image']      != $sd->avatar_image ||
+                    $p['stove_lv']          != $sd->stove_lv ||
+                    $p['stove_lv_content']  != $sd->stove_lv_content )
                 {
                     db()->update('players')
                         ->params([
-                            'player_name'       => $s->nickname,
-                            'avatar_image'      => $s->avatar_image,
-                            'stove_lv'          => $s->stove_lv,
-                            'stove_lv_content'  => $s->stove_lv_content,
+                            'player_name'       => $sd->nickname,
+                            'avatar_image'      => $sd->avatar_image,
+                            'stove_lv'          => $sd->stove_lv,
+                            'stove_lv_content'  => $sd->stove_lv_content,
                             'updated_at'        => $this->getTimestring(false,false)
                         ])
                         ->where(['id' => $p['id']])
                         ->execute();
                 }
                 // ?? Use API ratelimit feedback here?
-                if ($signInResponse['headers']['x-ratelimit-remaining'] < 2) {
-                    $this->p('(pausing 10sec: low x-ratelimit-remaining) ');
-                    sleep (10);
+                $xrlr = $signInResponse['headers']['x-ratelimit-remaining'];
+                if ($xrlr < 2) {
+                    $this->p("(NOTE: x-ratelimit-remaining=$xrlr) ");
+                    // Thinking small sleep may not help here, so just go on
+                    #sleep (10);
                 }
 
                 // Send gift code
-                $tries = 3;
-                while ($tries>0) {
+                $tries = 4;
+                $sendGiftGood = true;
+                while ($tries>0 && $badResponsesLeft>0) {
                     $giftResponse = $this->sendGiftCode($p['id'],$giftCode);
                     $tries--;
+                    if (empty($giftResponse['http-status'])) {
+                        // Timeout or network error
+                        $giftResponse['msg'] = $giftResponse['guzExceptionMessage'];
+                        $this->p('(Network error: '.$giftResponse['msg'].') ');
+                        sleep(2);
+                        $badResponsesLeft--;
+                        continue;
+                    }
                     $giftErrCode = $giftResponse['err_code'];
                     if ($giftErrCode == 40014) {
                         // Invalid gift code
                         $this->p('Aborting: Invalid gift code','b');
                         break 2;
                     }
+                    if ($giftErrCode == 40007) {
+                        // Expired gift code
+                        $this->p('Aborting: Gift code expired','b');
+                        break 2;
+                    }
+                    if ($giftResponse['http-status'] >= 400) {
+                        $this->p('<b>WOS gift API ERROR:</b> '.$giftResponse['guzExceptionMessage'],'p');
+                        $sendGiftGood = false;
+                        break 2;
+                    }
                     $resetIn = 0;
                     if ($giftErrCode == 40004) {
+                        // ?? Exceeded rate limit?
                         $resetIn = 20;
                         $msg = "Gift errCode=$giftErrCode";
                     } else if ($giftResponse['http-status']==429) {
@@ -227,8 +262,8 @@ class WosController extends Controller {
                                             tick("@$ratelimitReset") : tick());
                             $resetIn = intval($ratelimitReset) - intval($this->getTimestring(false,true));
                         } else {
-                            $resetAt = tick();
                             $ratelimitReset = -1;
+                            $resetAt = tick();
                         }
                         // For sanity, until I see real values for x-ratelimit-reset
                         if ( $resetIn < 1 || $resetIn > 65) {
@@ -259,8 +294,6 @@ class WosController extends Controller {
                             ->where(['id' => $p['id']])
                             ->execute();
                         sleep($resetIn);
-                    } else if ($giftResponse['http-status'] >= 400) {
-                        $this->p('<b>WOS gift API ERROR:</b> '.$giftResponse['guzExceptionMessage'],'p');
                     } else { // Success!
                         break;
                     }
@@ -274,6 +307,7 @@ class WosController extends Controller {
                         break;
                     default:
                         $msg = "$giftErrCode ".$giftResponse['msg'];
+                        $sendGiftGood = false;
                         break;
                 }
                 $this->p("$msg</p>\n");
@@ -284,11 +318,21 @@ class WosController extends Controller {
                     ])
                     ->where(['id' => $p['id']])
                     ->execute();
+                // Unless we know for sure we should continue to other players,
+                // let's abort here and not hit the API any more.
+                // We can add more retriable cases above as we find them.
+                if ( ! $sendGiftGood ) {
+                    $this->p('Cannot confirm we can continue, aborting now.','p');
+                    break;
+                }
             }
         } catch (PDOException $ex) {
             $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
         } catch (\Exception $ex) {
             $this->p('<b>Exception:</b> '.$ex->getMessage(),'p');
+        }
+        if ($badResponsesLeft<1) {
+            $this->p('ABORT: exceeded max bad responses.','p');
         }
         $this->htmlFooter();
     }
@@ -590,19 +634,25 @@ Body3:
             // Pull out Response object from exception class, process as "normal"
             $response = $e->getResponse();
             $guzExceptionMessage = $e->getMessage();
+        } catch (\GuzzleHttp\Exception\RequestException $e) {
+            // Networking error
+            $guzExceptionMessage = $e->getMessage();
+            $response = null;
         }
 
-        $body = json_decode($response->getBody());
-        // Headers: Force all param names to lower case and
-        // combine values array into a string
         $headers = [];
-        foreach ($response->getHeaders() as $name => $values) {
-            $headers[strtolower($name)] = implode(',',$values);
-        }
-        if (_env('APP_DEBUG')=='true') {
-            $this->p("<br/>======== HTTP return code: ".$response->getStatusCode(),'p');
-            $this->pDebug('Headers: ',$headers);
-            $this->pDebug('Body: ',$body);
+        if ( !empty($response) ) {
+            $body = json_decode($response->getBody());
+            // Headers: Force all param names to lower case and
+            // combine values array into a string
+            foreach ($response->getHeaders() as $name => $values) {
+                $headers[strtolower($name)] = implode(',',$values);
+            }
+            if (_env('APP_DEBUG')=='true') {
+                $this->p("<br/>======== HTTP return code: ".$response->getStatusCode(),'p');
+                $this->pDebug('Headers: ',$headers);
+                $this->pDebug('Body: ',$body);
+            }
         }
         return [
             'code'          => (isset($body->code) ? $body->code : null),
@@ -610,7 +660,7 @@ Body3:
             'msg'           => (isset($body->msg) ? $body->msg : null),
             'err_code'      => (isset($body->err_code) ? $body->err_code : null),
             'headers'       => $headers,
-            'http-status'   => $response->getStatusCode(),
+            'http-status'   => (!empty($response) ? $response->getStatusCode() : null),
             'guzExceptionMessage' => $guzExceptionMessage
         ];
     }
