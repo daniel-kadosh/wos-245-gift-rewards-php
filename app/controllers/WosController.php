@@ -3,8 +3,10 @@
 namespace App\Controllers;
 
 use GuzzleHttp\Client;
+use Leaf\Config;
 use Leaf\Controller;
 use Leaf\Http\Request;
+use Leaf\Log;
 use PDOException;
 
 class WosController extends Controller {
@@ -18,8 +20,10 @@ class WosController extends Controller {
             'Last Update UTC'   => 'updated_at'
         ];
 
-    private $time = null;               // tick() DateTime object
-    private $guz;                       // Guzzle HTTP client object
+    private $time = null;   // tick() DateTime object
+    private $guz;           // Guzzle HTTP client object
+    private $log;           // Leaf logger
+    private $dbg;           // boolean: true if APP_DEBUG
 
     public function __construct() {
         parent::__construct();
@@ -27,6 +31,16 @@ class WosController extends Controller {
         db()->autoConnect();
         $this->time = tick();
         $this->guz = new Client(['timeout'=>10]);
+        $this->dbg = ( _env('APP_DEBUG')=='true' );
+
+        // Set up logger
+        Config::set('log.style','linux');
+        Config::set('log.dir',  _env('LOG_DIR', __DIR__.'/../../wos245/'));
+        Config::set('log.file', 'wos_controller_'.
+            substr($this->getTimestring(false,false),0,7).'.log');
+        $this->log = app()->logger();
+        $this->log->level( $this->dbg ? Log::DEBUG : Log::INFO );
+        $this->logInfo( '=== '.$this->request->getUrl().$_SERVER['REQUEST_URI'] );
     }
 
     /**
@@ -53,7 +67,7 @@ class WosController extends Controller {
         $this->p('<a href="https://github.com/daniel-kadosh/wos-245-gift-rewards-php" target="_blank">'.
                 'Github</a>'
             );
-        $this->p(file_get_contents('git-info'),'pre');
+        $this->p( trim(file_get_contents('git-info')) ,'pre' ,true);
         $this->p('</td></tr></table>');
         $this->htmlFooter();
     }
@@ -129,6 +143,7 @@ class WosController extends Controller {
             if ( count($allPlayers)==0 ) {
                 $this->p('No players in the database!','p');
             }
+            $this->logInfo('Listed '.($n-1).' players');
         } catch (PDOException $ex) {
             $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
         } catch (\Exception $ex) {
@@ -157,7 +172,7 @@ class WosController extends Controller {
             $badResponsesLeft = 3;
             foreach ($allPlayers as $p) {
                 // Verify player
-                $this->p('<p>'.$p['id'].' - <b>'.$p['player_name'].'</b>: ');
+                $this->p('<p>'.$p['id'].' - <b>'.$p['player_name'].'</b>: ',0,true);
                 $tries = 5;
                 $signInGood = false;
                 while ($tries>0 && $badResponsesLeft>0) {
@@ -165,15 +180,15 @@ class WosController extends Controller {
                     $tries--;
                     if (empty($signInResponse['http-status'])) {
                         // Timeout or network error
-                        $this->p('(Network error: '.$signInResponse['guzExceptionMessage'].') ');
+                        $this->p('(Network error: '.$signInResponse['guzExceptionMessage'].') ',0,true);
                         $badResponsesLeft--;
                         sleep(2);
                     } else if ($signInResponse['http-status']==429) {
                         // Hit rate limit!
-                        $this->p('(Pausing 61sec due to 429 signIn rate limit) ');
+                        $this->p('(Pausing 61sec due to 429 signIn rate limit) ',0,true);
                         sleep(61);
                     } else if ($signInResponse['http-status'] >= 400) {
-                        $this->p('<b>ABORT: WOS signIn API ERROR:</b> '.$signInResponse['guzExceptionMessage'],'p');
+                        $this->p('<b>ABORT: WOS signIn API ERROR:</b> '.$signInResponse['guzExceptionMessage'],'p',true);
                         break 2;
                     } else {
                         // All good!
@@ -182,21 +197,24 @@ class WosController extends Controller {
                     }
                 }
                 if ( ! $signInGood ) {
-                    $this->p("<b>ABORT:</b> Failed to sign in player</p>");
+                    $this->p('<b>ABORT:</b> Failed to sign in player</p>',0,true);
                     break;
                 }
                 $sd = $signInResponse['data'];
                 if ($sd->kid!=self::OUR_STATE || $signInResponse['err_code'] == 40004) {
                     // 40004 = Player doesn't exist
-                    $this->p('DELETING player: invalid user or state (#'.$sd->kid.')</p>');
-                    $this->deletePlayer($p['id']);
+                    $this->p('DELETING player: invalid user or state (#'.$sd->kid.')</p>',0,true);
+                    if ( $this->deletePlayer($p['id']) == -1 ) {
+                        // Exception thrown during delete, so let's just stop
+                        break;
+                    }
                     continue;
                 }
 
                 // Update player if needed
-                if ( $p['player_name']      != $sd->nickname ||
-                    $p['avatar_image']      != $sd->avatar_image ||
-                    $p['stove_lv']          != $sd->stove_lv ||
+                if ( $p['player_name']      != $sd->nickname        ||
+                    $p['avatar_image']      != $sd->avatar_image    ||
+                    $p['stove_lv']          != $sd->stove_lv        ||
                     $p['stove_lv_content']  != $sd->stove_lv_content )
                 {
                     db()->update('players')
@@ -213,21 +231,21 @@ class WosController extends Controller {
                 // ?? Use API ratelimit feedback here?
                 $xrlr = $signInResponse['headers']['x-ratelimit-remaining'];
                 if ($xrlr < 2) {
-                    $this->p("(NOTE: x-ratelimit-remaining=$xrlr) ");
+                    $this->p("(NOTE: x-ratelimit-remaining=$xrlr) ",0,true);
                     // Thinking small sleep may not help here, so just go on
                     #sleep (10);
                 }
 
                 // Send gift code
                 $tries = 4;
-                $sendGiftGood = true;
+                $sendGiftGood = false;
                 while ($tries>0 && $badResponsesLeft>0) {
                     $giftResponse = $this->sendGiftCode($p['id'],$giftCode);
                     $tries--;
                     if (empty($giftResponse['http-status'])) {
                         // Timeout or network error
                         $giftResponse['msg'] = $giftResponse['guzExceptionMessage'];
-                        $this->p('(Network error: '.$giftResponse['msg'].') ');
+                        $this->p('(Network error: '.$giftResponse['msg'].') ',0,true);
                         sleep(2);
                         $badResponsesLeft--;
                         continue;
@@ -235,17 +253,16 @@ class WosController extends Controller {
                     $giftErrCode = $giftResponse['err_code'];
                     if ($giftErrCode == 40014) {
                         // Invalid gift code
-                        $this->p('Aborting: Invalid gift code','b');
+                        $this->p('Aborting: Invalid gift code','b',true);
                         break 2;
                     }
                     if ($giftErrCode == 40007) {
                         // Expired gift code
-                        $this->p('Aborting: Gift code expired','b');
+                        $this->p('Aborting: Gift code expired','b',true);
                         break 2;
                     }
                     if ($giftResponse['http-status'] >= 400) {
-                        $this->p('<b>WOS gift API ERROR:</b> '.$giftResponse['guzExceptionMessage'],'p');
-                        $sendGiftGood = false;
+                        $this->p('<b>WOS gift API ERROR:</b> '.$giftResponse['guzExceptionMessage'],'p',true);
                         break 2;
                     }
                     $resetIn = 0;
@@ -269,7 +286,7 @@ class WosController extends Controller {
                         if ( $resetIn < 1 || $resetIn > 65) {
                             $resetIn = 21;
                         }
-                        //if (_env('APP_DEBUG')=='true') {
+                        //if ( $this->dbg ) {
                         // Force debug info for this case, as we haven't seen this live.
                         // The 60sec sleep for a 429 in signIn above seems to have solved
                         // this whole issue, and we may not need to sleep here at all.
@@ -279,13 +296,13 @@ class WosController extends Controller {
                                 ."=".$this->getTimestring(false,false)."<br/>\n"
                                 ." resetIn=$resetIn"
                                 ." resetAt=".$resetAt->format('YYYY-MM-DD HH:mm:ss')
-                                ,'p');
+                                ,'p',true);
                         //}
                         $msg = "http 429 Too many attempts";
                     }
                     if ( $resetIn > 0 ) {
                         $msg = "$msg: ".$giftResponse['msg']." - pausing $resetIn sec.";
-                        $this->p("($msg)");
+                        $this->p("($msg)",0,true);
                         db()->update('players')
                             ->params([
                                 'last_message'  => $msg,
@@ -301,16 +318,17 @@ class WosController extends Controller {
                 switch ($giftErrCode) {
                     case 20000:
                         $msg = "$giftCode: redeemed succesfully";
+                        $sendGiftGood = true;
                         break;
                     case 40008:
                         $msg = "$giftCode: gift code already used";
+                        $sendGiftGood = true;
                         break;
                     default:
                         $msg = "$giftErrCode ".$giftResponse['msg'];
-                        $sendGiftGood = false;
                         break;
                 }
-                $this->p("$msg</p>\n");
+                $this->p("$msg</p>",0,true);
                 db()->update('players')
                     ->params([
                         'last_message'  => $msg,
@@ -322,17 +340,17 @@ class WosController extends Controller {
                 // let's abort here and not hit the API any more.
                 // We can add more retriable cases above as we find them.
                 if ( ! $sendGiftGood ) {
-                    $this->p('Cannot confirm we can continue, aborting now.','p');
+                    $this->p('Cannot confirm we can continue, stopping now.','p',true);
                     break;
                 }
             }
         } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
+            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p',true);
         } catch (\Exception $ex) {
-            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p');
+            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p',true);
         }
         if ($badResponsesLeft<1) {
-            $this->p('ABORT: exceeded max bad responses.','p');
+            $this->p('ABORT: exceeded max bad responses.','p',true);
         }
         $this->htmlFooter();
     }
@@ -343,24 +361,26 @@ class WosController extends Controller {
     public function add($player_id) {
         $player_id = $this->validateId($player_id);
         $this->htmlHeader('== Add player');
-        $this->p("Adding player id=$player_id",'p');
+        $this->p("Adding player id=$player_id",'p',true);
         try {
             // Check for duplicate before hitting WOS API
             $result = db()
                 ->select('players')
                 ->find($player_id);
-            if (_env('APP_DEBUG')=='true') {
+            if ( $this->dbg ) {
                 $this->pDebug('SELECT by player_id ',$result);
             }
             if (!empty($result)) {
-                $this->p('<b>ERROR:</b> player ID already exists, ignored.','p');
+                $this->p('<b>ERROR:</b> player ID already exists, ignored.','p',true);
             } else {
                 // Verify player is in #245 thru WOS API
                 $response = $this->signIn($player_id);
                 if ($response['err_code'] == 40004) {
-                    $this->p('<b>ERROR:</b> player ID does not exist in WOS, ignored.','p');
+                    $this->p('<b>ERROR:</b> player ID does not exist in WOS, ignored.','p',true);
                 } else if ($response['http-status'] >= 400) {
-                    $this->p('<b>WOS API ERROR:</b> '.$response['guzExceptionMessage'],'p');
+                    $this->p('<b>WOS API ERROR:</b> '.$response['guzExceptionMessage'],'p',true);
+                } else if ($response['code'] != 0) {
+                    $this->p('<b>WOS API problem:</b> '.$response['err_code'].': '.$response['msg'],'p',true);
                 } else {
                     $data = $response['data'];
                     if ($data->kid == self::OUR_STATE) {
@@ -377,20 +397,20 @@ class WosController extends Controller {
                                 'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss')
                                 ])
                             ->execute();
-                        if (_env('APP_DEBUG')=='true') {
+                        if ( $this->dbg ) {
                             $this->pDebug('INSERT ',$result);
                         }
-                        $this->p('Name <b>'.$data->nickname.'</b> inserted into database','p');
+                        $this->p('Name <b>'.$data->nickname.'</b> inserted into database','p',true);
                     } else {
                         $this->p('IGNORED: <b>'.$data->nickname.
-                            '</b> is in invalid state $'.$data->kid,'p');
+                            '</b> is in invalid state $'.$data->kid,'p',true);
                     }
                 }
             }
         } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
+            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p',true);
         } catch (\Exception $ex) {
-            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p');
+            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p',true);
         }
         $this->htmlFooter();
     }
@@ -401,11 +421,13 @@ class WosController extends Controller {
     public function remove($player_id) {
         $player_id = $this->validateId($player_id);
         $this->htmlHeader('== Remove player');
+        $this->p("REMOVING player id=$player_id",'p',true);
         $count = $this->deletePlayer($player_id);
-        if ($count < 1) {
-            response()->exit("Player id=$player_id not found",404);
+        if ($count > 0) {
+            $this->p("REMOVED player id=$player_id succesfully",'p',true);
+        } else if ($count == 0) {
+            $this->p("Player id=$player_id not found",'p',true);
         }
-        $this->p("REMOVED player id=$player_id succesfully",'p');
         $this->htmlFooter();
     }
 
@@ -530,11 +552,11 @@ class WosController extends Controller {
                 ->execute();
             return $result->rowCount();
         } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR Deleting:</b> '.$ex->getMessage(),'p');
+            $this->p('<b>DB ERROR Deleting:</b> '.$ex->getMessage(),'p',true);
         } catch (\Exception $ex) {
-            $this->p('<b>Exception Deleting:</b> '.$ex->getMessage(),'p');
+            $this->p('<b>Exception Deleting:</b> '.$ex->getMessage(),'p',true);
         }
-        return 0;
+        return -1;
     }
 
     ///////////////////////// Guzzle functions
@@ -605,7 +627,7 @@ Body3:
         $timestring = $this->getTimestring(empty($cdk));
         $signRaw = ($cdk ? "cdk=$cdk&" : '').
             "fid=$fid&time=$timestring".self::HASH;
-        if (_env('APP_DEBUG')=='true') {
+        if ( $this->dbg ) {
             $this->p("Form params:<br/>\n".
                     "sign raw: $signRaw\n".
                     "sign md5: ".md5($signRaw),'pre');
@@ -648,7 +670,7 @@ Body3:
             foreach ($response->getHeaders() as $name => $values) {
                 $headers[strtolower($name)] = implode(',',$values);
             }
-            if (_env('APP_DEBUG')=='true') {
+            if ( $this->dbg ) {
                 $this->p("<br/>======== HTTP return code: ".$response->getStatusCode(),'p');
                 $this->pDebug('Headers: ',$headers);
                 $this->pDebug('Body: ',$body);
@@ -730,12 +752,19 @@ Body3:
     private function htmlFooter() {
         $this->p('</body></html>');
     }
-    private function p($msg,$htmlType=null) {
-        response()->markup((empty($htmlType) ? '' : "<$htmlType>").
-            $msg. (empty($htmlType) ? '' : "</$htmlType>"). "\n");
+    private function p($msg,$htmlType=null,$log=false) {
+        $format = ( empty($htmlType) ? "%s\n" : "<$htmlType>%s</$htmlType>\n" );
+        response()->markup( sprintf($format,$msg) );
+        if ($log) {
+            $this->logInfo( $msg );
+        }
     }
     private function pDebug($msg,$text) {
-        $this->p("$msg: ".print_r($text,true)."\n",'pre');
+        $this->p("$msg: ".print_r($text,true)."\n",'pre',true);
+    }
+    private function logInfo($msg) {
+        static $myPid = getmypid();
+        $this->log->info( "$myPid) ".strip_tags($msg) );
     }
 }
 
