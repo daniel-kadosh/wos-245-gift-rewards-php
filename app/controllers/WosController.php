@@ -225,6 +225,7 @@ class WosController extends Controller {
         if ($this->badResponsesLeft<1) {
             $this->p('ABORT: exceeded max bad responses.','p',true);
         }
+        $this->p('Send giftcode run completed.','p');
         $this->htmlFooter();
     }
 
@@ -534,8 +535,8 @@ class WosController extends Controller {
             }
             $resetIn = 0;
             if ($giftErrCode == 40004) {
-                // ?? Exceeded rate limit?
-                $resetIn = 20;
+                // Timeout retry
+                $resetIn = 3;
                 $msg = "Gift errCode=$giftErrCode";
             } else if ($giftResponse['http-status']==429) {
                 // Too many requests
@@ -801,6 +802,7 @@ Body3:
         $this->p('th, td { padding: 2px; text-align: left; vertical-align: middle; }');
         $this->p('a { font-weight: bold; }');
         $this->p('th { text-decoration: underline; }');
+        $this->p('button { background-color: #ADD8E6; font-weight: bold; }');
         $this->p('</style>');
         $this->p('<script type="text/javascript">');
         $this->p("
@@ -823,7 +825,7 @@ Body3:
             ");
         $this->p('</script>');
         $this->p('<meta name="robots" content="noindex,nofollow" />');
-        $this->p("</head>\n<body>");
+        $this->p('</head><body style="background-color:#D3D3D3;">');
         $this->p("WOS #245 Gift Rewards",'h1');
         if ( $this->dbg || $this->guzEmulate ) {
             $this->p(__CLASS__.': dbg='.($this->dbg?1:0).' guzEmulate='.($this->guzEmulate?1:0),'pre',true);
@@ -837,23 +839,25 @@ Body3:
         $this->p('|','td');
         $this->p($this->menuForm('Remove'),'td');
         $this->p('|','td');
-        $this->p($this->menuForm('Send','Send giftcode'),'td');
+        $this->p($this->menuForm('Send','Send Giftcode'),'td');
         $this->p('</tr></table>');
         if ($title) {
             $this->p($title,'h3');
         }
     }
+    private function htmlFooter() {
+        $this->p('</body></html>');
+    }
     private function menuForm($action,$buttonName='') {
         $lAction = strtolower($action);
-	if (empty($buttonName)) { $buttonName = $action; }
+        if (empty($buttonName)) {
+            $buttonName = $action;
+        }
         $idField = $lAction.'Id';
         return "<form onsubmit=\"return formConfirm('$lAction','$idField');\">".
                 "<input type=\"text\" id=\"$idField\" name=\"$idField\" size=\"10\">".
                 "<button value=\"$action\">$buttonName</button>".
                 '</form>';
-    }
-    private function htmlFooter() {
-        $this->p('</body></html>');
     }
     private function p($msg,$htmlType=null,$log=false) {
         $format = ( empty($htmlType) ? "%s\n" : "<$htmlType>%s</$htmlType>\n" );
