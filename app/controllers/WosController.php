@@ -173,6 +173,12 @@ class WosController extends Controller {
         $this->htmlHeader('== Send Gift Code');
         $this->validateGiftCode($giftCode);
         $this->p("Sending <b>$giftCode</b> to all players that haven't received it:",'p');
+        $httpReturnCode = 200;
+        $errMsg = [];
+        $n = 0; // # of players attempted
+        $xrlrPauseTime = 61; // sleep time when reaching x-ratelimit-remaining
+        // Max bad responses (network error) from API before abort
+        $this->badResponsesLeft = 3;
         try {
             $allPlayers = db()
                 ->select('players')
@@ -181,16 +187,16 @@ class WosController extends Controller {
                 ->all();
             $numPlayers = count($allPlayers);
             if ( $numPlayers == 0 ) {
-                $this->p('No players in the database that still need that gift code.','p');
+                $errMsg[] = 'No players in the database that still need that gift code.';
+                $httpReturnCode = 404;
             }
             if ($this->dbg) {
                 $this->p("numPlayers=$numPlayers",'p',true);
             }
-            // Max bad responses (network error) from API before abort
-            $this->badResponsesLeft = 3;
-            $n = 0;
-            $xrlrPauseTime = 61; // sleep time when reaching x-ratelimit-remaining
             foreach ($allPlayers as $p) {
+                if ( $this->badResponsesLeft < 1 ) {
+                    break;
+                }
                 $n++;
                 $signInResponse = $this->verifyPlayerInWOS($p);
                 if ( $signInResponse == null ) {
@@ -228,14 +234,24 @@ class WosController extends Controller {
                 }
             }
         } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p',true);
+            $errMsg[] = '<b>DB ERROR:</b> '.$ex->getMessage();
+            $httpReturnCode = 500;
         } catch (\Exception $ex) {
-            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p',true);
+            $errMsg[] = '<b>Exception:</b> '.$ex->getMessage();
+            $httpReturnCode = 500;
         }
-        if ($this->badResponsesLeft<1) {
-            $this->p('ABORT: exceeded max bad responses.','p',true);
+        if ( $this->badResponsesLeft<1 ) {
+            $errMsg[] = 'exceeded max bad responses.';
+            $httpReturnCode = 500;
         }
-        $this->p('Send giftcode run completed.','p');
+        $this->p("Processed $n players",'p',true);
+        if ( $httpReturnCode>200 ) {
+            if ( $httpReturnCode>404 ) {
+                $errMsg[] = 'Incomplete run!';
+            }
+            $this->pExit($errMsg,$httpReturnCode);
+        }
+        $this->p('Send giftcode run completed succesfully!','p',true);
         $this->htmlFooter();
     }
 
@@ -251,50 +267,45 @@ class WosController extends Controller {
             $result = db()
                 ->select('players')
                 ->find($player_id);
-            if ( $this->dbg ) {
-                $this->pDebug('SELECT by player_id ',$result);
-            }
             if (!empty($result)) {
-                $this->p('<b>ERROR:</b> player ID already exists, ignored.','p',true);
-            } else {
-                // Verify player is in #245 thru WOS API
-                $response = $this->signIn($player_id);
-                if ($response['err_code'] == 40004) {
-                    $this->p('<b>ERROR:</b> player ID does not exist in WOS, ignored.','p',true);
-                } else if ($response['http-status'] >= 400) {
-                    $this->p('<b>WOS API ERROR:</b> '.$response['guzExceptionMessage'],'p',true);
-                } else if ($response['code'] != 0) {
-                    $this->p('<b>WOS API problem:</b> '.$response['err_code'].': '.$response['msg'],'p',true);
-                } else {
-                    $data = $response['data'];
-                    if ($data->kid == self::OUR_STATE) {
-                        $result = db()
-                            ->insert('players')
-                            ->params([
-                                'id'            => $player_id,
-                                'player_name'   => $data->nickname,
-                                'last_message'  => '(Created)',
-                                'avatar_image'  => $data->avatar_image,
-                                'stove_lv'      => $data->stove_lv,
-                                'stove_lv_content' => $data->stove_lv_content,
-                                'created_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
-                                'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss')
-                                ])
-                            ->execute();
-                        if ( $this->dbg ) {
-                            $this->pDebug('INSERT ',$result);
-                        }
-                        $this->p('Inserted into the database: <b>'.$data->nickname.'</b>','p',true);
-                    } else {
-                        $this->p('IGNORED: <b>'.$data->nickname.
-                            '</b> is in invalid state $'.$data->kid,'p',true);
-                    }
-                }
+                $this->pDebug('Details',$result);
+                $this->pExit('<b>ERROR:</b> player ID already exists, ignored.',400);
             }
+
+            // Verify player exists and is in #245 thru WOS API
+            $response = $this->signIn($player_id);
+            if ($response['err_code'] == 40004) {
+                $this->pExit('<b>ERROR:</b> player ID does not exist in WOS, ignored.',404);
+            } else if ($response['http-status'] >= 400) {
+                $this->pExit('<b>WOS API ERROR:</b> '.$response['guzExceptionMessage'],418);
+            } else if ($response['code'] != 0) {
+                $this->pExit('<b>WOS API problem:</b> '.$response['err_code'].': '.$response['msg'],418);
+            }
+            $data = $response['data'];
+            if ($data->kid != self::OUR_STATE) {
+                $this->pExit('<b>'.$data->nickname.'</b> is in invalid state #'.$data->kid,404);
+            }
+            // All good, insert!
+            $playerData = [
+                'id'            => $player_id,
+                'player_name'   => $data->nickname,
+                'last_message'  => '(Created)',
+                'avatar_image'  => $data->avatar_image,
+                'stove_lv'      => $data->stove_lv,
+                'stove_lv_content' => $data->stove_lv_content,
+                'created_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
+                'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss')
+            ];
+            $result = db()
+                ->insert('players')
+                ->params($playerData)
+                ->execute();
+            $this->p('Inserted into the database: <b>'.$data->nickname.'</b>','p',true);
+            $this->pDebug('Details',$playerData);
         } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p',true);
+            $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
         } catch (\Exception $ex) {
-            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p',true);
+            $this->pExit('<b>Exception:</b> '.$ex->getMessage(),500);
         }
         $this->htmlFooter();
     }
@@ -305,12 +316,18 @@ class WosController extends Controller {
     public function remove($player_id) {
         $this->htmlHeader('== Remove player');
         $player_id = $this->validateId($player_id);
-        $count = $this->deletePlayer($player_id);
-        if ($count > 0) {
-            $this->p("REMOVED player id=$player_id succesfully",'p',true);
-        } else if ($count == 0) {
-            $this->p("Player id=$player_id not found",'p',true);
+        $result = db()
+            ->select('players')
+            ->find($player_id);
+        if (empty($result)) {
+            $this->pExit("Player id=$player_id not found",404);
         }
+        $this->pDebug('Details',$result);
+        $count = $this->deletePlayer($player_id);
+        if ($count == 0) {
+            $this->pExit("Could not delete player id=$player_id ??",404);
+        }
+        $this->p("REMOVED player succesfully",'p',true);
         $this->htmlFooter();
     }
 
