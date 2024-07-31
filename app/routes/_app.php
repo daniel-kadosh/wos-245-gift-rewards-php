@@ -16,6 +16,11 @@ app()->get("/send/{gift_code}", "WosController@send");
 app()->get("/download/{fileFormat}", "WosController@download");
 app()->get("/download", "WosController@download");
 
+app()->get("/admin", "WosController@admin");
+app()->post("/admin/add", "WosController@adminAdd");        // POST: username, pswd
+app()->post("/admin/remove", "WosController@adminRemove");  // POST: username
+app()->post("/changepass", "WosController@adminChangePassword");  // POST: pswd
+
 // Debugging...
 if (_env('APP_DEBUG')=='true') {
     app()->get("/pi", function() {
