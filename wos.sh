@@ -55,6 +55,12 @@ fi
 APACHE_AUTH_FILE=wos245/apache-auth
 SQLITE_FILE=wos245/gift-rewards.db
 DOCKER_APP_NAME=wos245-app
+# For Linux, docker commands run under sudo
+# while for some things in Windows a "real tty" is needed
+CMD_PREFIX="sudo"
+if [[ `uname -o` == "Msys" ]]; then
+    CMD_PREFIX="winpty"
+fi
 
 function wos-start() {
     echo "Starting with ${ENV} environment"
@@ -73,13 +79,13 @@ function wos-start() {
     touch ${SQLITE_FILE}
     chmod 666 ${SQLITE_FILE}
     cp -f .env.${ENV} .env
-    sudo docker compose up --remove-orphans $OPT
+    ${CMD_PREFIX} docker compose up --remove-orphans $OPT
 }
 
 function wos-stop() {
     echo "Stopping"
     set -x
-    sudo docker compose down --remove-orphans ${DOCKER_APP_NAME}
+    ${CMD_PREFIX} docker compose down --remove-orphans ${DOCKER_APP_NAME}
 }
 
 function wos-rebuild() {
@@ -87,19 +93,19 @@ function wos-rebuild() {
     set -x
     cp -f .env.${ENV} .env
     # Docker build
-    sudo docker compose build --no-cache
+    ${CMD_PREFIX} docker compose build --no-cache
     # Bring up container
-    sudo docker compose up --remove-orphans --detach ${DOCKER_APP_NAME}
+    ${CMD_PREFIX} docker compose up --remove-orphans --detach ${DOCKER_APP_NAME}
     # PHP Composer build within the container
-    sudo docker compose exec ${DOCKER_APP_NAME} composer update
+    ${CMD_PREFIX} docker compose exec ${DOCKER_APP_NAME} composer update
     # Shut down again
-    sudo docker compose down --remove-orphans ${DOCKER_APP_NAME}
+    ${CMD_PREFIX} docker compose down --remove-orphans ${DOCKER_APP_NAME}
 }
 
 function wos-bash() {
     echo "Starting Bash shell in running container"
     set -x
-    sudo docker compose exec ${DOCKER_APP_NAME} bash
+    ${CMD_PREFIX} docker compose exec ${DOCKER_APP_NAME} bash
 }
 
 function wos-user() {
@@ -109,7 +115,7 @@ function wos-user() {
         OPT="-c"
     fi
     set -x
-    sudo docker compose exec ${DOCKER_APP_NAME} htdigest ${OPT} ${APACHE_AUTH_FILE} wos245 ${HTUSER}
+    ${CMD_PREFIX} docker compose exec ${DOCKER_APP_NAME} htdigest ${OPT} ${APACHE_AUTH_FILE} wos245 ${HTUSER}
     echo "== Resulting Apache digest auth file:"
     cat ${APACHE_AUTH_FILE}
 }

@@ -11,7 +11,8 @@ use PDOException;
 
 class WosController extends Controller {
     const HASH          = "tB87#kPtkxqOS2"; // WOS API secret
-    const OUR_STATE     = 245;              // State restriction
+    const OUR_STATE     = 245;              // State number restriction
+    const DIGEST_REALM  = 'wos245';         // Apache digest auth realm
     const LIST_COLUMNS  = [                 // Column labels to DB field names
             'ID'                => 'id',
             'Name'              => 'player_name',
@@ -25,9 +26,8 @@ class WosController extends Controller {
     private $log;           // Leaf logger
     private $dbg;           // boolean: true if APP_DEBUG for verbose logging
     private $guzEmulate;    // boolean: true if GUZZLE_EMULATE to not make WOS API calls
-
     private $badResponsesLeft;  // Number of questionable bad responses from WOS API before abort
-
+    private $dataDir;       // For a number of files used by the app or Apache
 
     public function __construct() {
         parent::__construct();
@@ -37,15 +37,16 @@ class WosController extends Controller {
         $this->guz = new Client(['timeout'=>10]);
         $this->dbg = ( _env('APP_DEBUG')=='true' );
         $this->guzEmulate = ( _env('GUZZLE_EMULATE')=='true' );
+        $this->dataDir = _env('LOG_DIR', __DIR__.'/../../wos245/');
 
         // Set up logger
         Config::set('log.style','linux');
-        Config::set('log.dir',  _env('LOG_DIR', __DIR__.'/../../wos245/'));
+        Config::set('log.dir', $this->dataDir);
         Config::set('log.file', 'wos_controller_'.
             substr($this->getTimestring(false,false),0,7).'.log');
         $this->log = app()->logger();
         $this->log->level( $this->dbg ? Log::DEBUG : Log::INFO );
-        $this->logInfo( '=== '.$this->request->getUrl().$_SERVER['REQUEST_URI'] );
+        $this->logInfo( '=== '.$this->request->getUrl().$_SERVER['REQUEST_URI'].'  user='.$_SERVER['REMOTE_USER'] );
     }
 
     /**
@@ -67,9 +68,17 @@ class WosController extends Controller {
             'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
         $this->p(sprintf($lineFormat,'download','download/','[format]',
             'Download player DB','Supported formats: <b>csv</b>, <b>json</b>, <b>curl</b> (bash script to re-add users)'),'tr');
+
         $this->p('<td colspan="2">&nbsp;</td>','tr'); // empty row
+
+        $this->p('<td colspan="2">Change your password for website login: '.
+                    '<form action="/changepass" method="post">'.
+                    '<input type="text" id="pswd" name="pswd">'.
+                    '<input type="submit" value="Change"></form></td>'
+                ,'tr');
+
         $this->p('<tr><td colspan="2">');
-        $this->p('<a href="https://github.com/daniel-kadosh/wos-245-gift-rewards-php" target="_blank">'.
+        $this->p('Source code: <a href="https://github.com/daniel-kadosh/wos-245-gift-rewards-php" target="_blank">'.
                 'Github</a>'
             );
         $this->p( trim(file_get_contents('git-info')) ,'pre' ,true);
@@ -161,8 +170,8 @@ class WosController extends Controller {
      * Send reward code to all users.
      */
     public function send($giftCode) {
-        $this->validateGiftCode($giftCode);
         $this->htmlHeader('== Send Gift Code');
+        $this->validateGiftCode($giftCode);
         $this->p("Sending <b>$giftCode</b> to all players that haven't received it:",'p');
         try {
             $allPlayers = db()
@@ -180,6 +189,7 @@ class WosController extends Controller {
             // Max bad responses (network error) from API before abort
             $this->badResponsesLeft = 3;
             $n = 0;
+            $xrlrPauseTime = 61; // sleep time when reaching x-ratelimit-remaining
             foreach ($allPlayers as $p) {
                 $n++;
                 $signInResponse = $this->verifyPlayerInWOS($p);
@@ -194,10 +204,10 @@ class WosController extends Controller {
                 // API ratelimit: assume if it hits 0 we have to wait 1 minute
                 $xrlr = $signInResponse['headers']['x-ratelimit-remaining'];
                 if ($xrlr < 2 && $n < $numPlayers) {
-                    $this->p("(signIn x-ratelimit-remaining=$xrlr - pause 61sec) ",0,true);
+                    $this->p("(signIn x-ratelimit-remaining=$xrlr - pause $xrlrPauseTime sec) ",0,true);
                     // Proactively sleep here
                     if ( ! $this->guzEmulate ) {
-                        sleep(61);
+                        sleep($xrlrPauseTime);
                     }
                 }
 
@@ -210,10 +220,10 @@ class WosController extends Controller {
                 // API ratelimit: assume if it hits 0 we have to wait 1 minute
                 $xrlr = $giftResponse['headers']['x-ratelimit-remaining'];
                 if ($xrlr < 2 && $n < $numPlayers) {
-                    $this->p("(gift x-ratelimit-remaining=$xrlr - pause 61sec) ",0,true);
+                    $this->p("(gift x-ratelimit-remaining=$xrlr - pause $xrlrPauseTime sec) ",0,true);
                     // Proactively sleep here
-                    if ( ! $this->guzEmulate ) {
-                        sleep(61);
+                    if ( ! $this->guzEmulate && $n < $numPlayers) {
+                        sleep($xrlrPauseTime);
                     }
                 }
             }
@@ -233,8 +243,8 @@ class WosController extends Controller {
      * Create a new player.
      */
     public function add($player_id) {
-        $player_id = $this->validateId($player_id);
         $this->htmlHeader('== Add player');
+        $player_id = $this->validateId($player_id);
         $this->p("Adding player id=$player_id",'p',true);
         try {
             // Check for duplicate before hitting WOS API
@@ -293,8 +303,8 @@ class WosController extends Controller {
      * Remove player.
      */
     public function remove($player_id) {
-        $player_id = $this->validateId($player_id);
         $this->htmlHeader('== Remove player');
+        $player_id = $this->validateId($player_id);
         $count = $this->deletePlayer($player_id);
         if ($count > 0) {
             $this->p("REMOVED player id=$player_id succesfully",'p',true);
@@ -369,33 +379,254 @@ class WosController extends Controller {
                 }
                 break;
             case 'curl':
-		print   "#!/bin/bash\n".
-			"# Script to add all users\n".
-			"DIGEST_AUTH='username:password'\n".
-			"if [ \"\${DIGEST_AUTH}\" == \"username:password\" ]; then\n".
-			"    echo 'Please edit this file and update with your credentials'\n".
-			"    exit 1\n".
-			"fi\n\n";
-                $curlAuth = '--digest -u "${DIGEST_AUTH}"';
-                $curlUrl = rtrim(_env('APP_URL'),'/');
-                $n = 1;
-                foreach ($allPlayers as $p) {
-                    printf("curl -s %s/add/%d %s | grep -e '^<p>'\n",
-                        $curlUrl, $p['id'], $curlAuth);
-                    if ( $n++ % 29 == 0) {
-                        print "sleep 61\n";
-                    }
-                }
-                break;
+                print "#!/bin/bash\n".
+                    "# Script to add all users\n".
+                    "DIGEST_AUTH='username:password'\n".
+                    "if [ \"\${DIGEST_AUTH}\" == \"username:password\" ]; then\n".
+                    "    echo 'Please edit this file and update with your credentials'\n".
+                    "    exit 1\n".
+                    "fi\n\n";
+                        $curlAuth = '--digest -u "${DIGEST_AUTH}"';
+                        $curlUrl = rtrim(_env('APP_URL'),'/');
+                        $n = 1;
+                        foreach ($allPlayers as $p) {
+                            printf("curl -s %s/add/%d %s | grep -e '^<p>'\n",
+                                $curlUrl, $p['id'], $curlAuth);
+                            if ( $n++ % 29 == 0) {
+                                print "sleep 61\n";
+                            }
+                        }
+                        break;
             default:
                 break;
         }
         ob_flush();
-        #ob_end_clean();
-        #response()->send();
+    }
+
+    /**
+     * Admin menu.
+     */
+    public function admin() {
+        $this->htmlHeader('== Admin menu');
+        $numUsers = $this->validateDigestFile(); // Go check digest auth file permissions
+
+        $inputFormat = '%s: <input type="text" id="%s" name="%s">';
+        $this->p('<ul>');
+        $this->p('<b>Add user</b> <form action="/admin/add" method="post">'.
+                    sprintf($inputFormat,'Username','username','username').
+                    sprintf($inputFormat,'Password','pswd','pswd').
+                    '<input type="submit" value="Add"></form>'
+                ,'li');
+        $this->p('<b>Remove user</b> <form action="/admin/remove" method="post">'.
+                    sprintf($inputFormat,'Username','username','username').
+                    '<input type="submit" value="Remove"></form>'
+                ,'li');
+        $this->p('</ul>');
+
+        $this->p("There are $numUsers admin users:",'h4',true);
+        $cmd = sprintf('awk -F: \'{if ($2=="%s") {print "<li>"$1"</li>"}}\' %s',
+                        self::DIGEST_REALM, _env('APACHE_DIGEST') );
+        $this->p($this->execCmd($cmd),'ol',true);
+        $this->htmlFooter();
+    }
+
+    /**
+     * Add admin user.
+     */
+    public function adminChangePassword() {
+        $this->htmlHeader('== Change Password');
+        $username = $_SERVER['REMOTE_USER'];    // Currently logged user
+        $this->p("Changing password for: $username",'p',true);
+        $this->validateUsername($username);
+        $password = request()->get('pswd');
+        $this->validatePassword($password);
+
+        if ( $this->countUsers($username) > 0 ) {
+            $linesChanged = $this->changeAdminUserPassword($username,$password);
+            if ( $linesChanged > 0 ) {
+                $this->p("($linesChanged) Successfuly changed password",'p',true);
+            } else {
+                $this->p("($linesChanged) Could not change password!",'p',true);
+            }
+        } else {
+            $this->p('User NOT found, impossible!','p',true);
+        }
+        $this->htmlFooter();
+    }
+
+    /**
+     * Add admin user.
+     */
+    public function adminAdd() {
+        $this->htmlHeader('== Add Admin User');
+        $this->p('<a href="/admin">[Admin Menu]</a>','p');
+        $this->validateDigestFile();
+        $username = request()->get('username');
+        $this->p("Adding admin user $username:",'p',true);
+        $this->validateUsername($username);
+        $password = request()->get('pswd');
+        $this->validatePassword($password);
+
+        if ( $this->countUsers($username) > 0 ) {
+            // $this->p('User found, changing password','p',true);
+            // $numUser = $this->changeAdminUserPassword($username,$password);
+            $this->pExit('User already exists!',409);
+        }
+
+        $fullLine = sprintf("%s:%s:%s\n", $username, self::DIGEST_REALM,
+            $this->plainPassword2Digest($username,$password) );
+        file_put_contents( _env('APACHE_DIGEST'), $fullLine, FILE_APPEND | LOCK_EX);
+        $this->logInfo($_SERVER['REMOTE_USER'].' added: '.$fullLine);
+        $numUser = $this->countUsers($username);
+        if ( $numUser < 1 ) {
+            $this->pExit("ERROR: Could not verify new admin user!",500);
+        }
+        $this->p("Successfuly added $numUser admin users",'p',true);
+        $this->htmlFooter();
+    }
+
+    /**
+     * Remove admin user.
+     */
+    public function adminRemove() {
+        $this->htmlHeader('== Remove Admin User');
+        $this->p('<a href="/admin">[Admin Menu]</a>','p');
+        $this->validateDigestFile();
+        $username = request()->get('username');
+        $this->p("Removing admin user $username:",'p',true);
+        $this->validateUsername($username);
+
+        if ( $this->countUsers() < 2) {
+            $this->pExit('ERROR: Only 1 user, cannot remove all users',403);
+        }
+        /*  ?? Not sure if we should enforce this...
+        if ( $_SERVER['REMOTE_USER'] != $username ) {
+            $this->pExit('ERROR: can only remove self, not others. Current user='.$_SERVER['REMOTE_USER'],403);
+        }
+        */
+        // This should never happen if already auth'ed and above "REMOTE_USER==username" check passed
+        if ( $this->countUsers($username) != 1 ) {
+            $this->pExit('ERROR: Username not found',404);
+        }
+
+        $numDeleted = $this->deleteAdminUser($username);
+        if ( $numDeleted < 1 ) {
+            $this->pExit("ERROR: Could not remove admin user",500);
+        }
+        $this->p("Successfuly removed $numDeleted admin users",'p',true);
+        $this->htmlFooter();
     }
 
     ///////////////////////// Helper functions
+    private function deleteAdminUser($username) {
+        $l = intval( $this->execCmd('wc -l '._env('APACHE_DIGEST')) );
+        $this->execCmd( sprintf("sed -i '/^%s:%s:/d' %s",
+                                $username,
+                                self::DIGEST_REALM,
+                                 _env('APACHE_DIGEST')
+                        ) );
+        return $l - intval( $this->execCmd('wc -l '._env('APACHE_DIGEST')) );
+
+    }
+    private function plainPassword2Digest($username,$password) {
+        return md5(sprintf('%s:%s:%s', $username, self::DIGEST_REALM, $password ));
+    }
+    private function changeAdminUserPassword($username,$password) {
+        return intval( $this->execCmd(
+            sprintf('perl -i -lpe \'$k+= s/^%s:%s:.*$/%s:%s:%s/g; END{print "$k"}\' %s',
+                $username,
+                self::DIGEST_REALM,
+                $username,
+                self::DIGEST_REALM,
+                $this->plainPassword2Digest($username,$password),
+                _env('APACHE_DIGEST')
+            ) ) );
+    }
+    private function countUsers($userToFind=null) {
+        return intval($this->execCmd( sprintf('grep -c %s:%s: %s',
+                                (empty($userToFind) ? '' : '^'.$userToFind),
+                                self::DIGEST_REALM,
+                                _env('APACHE_DIGEST')
+                            ) ));
+    }
+    private function execCmd($cmd) {
+        if ($this->dbg) {
+            $this->logInfo("--Executing: ".$cmd);
+        }
+        return `$cmd`;
+    }
+    private function validateUsername($username) {
+        $errMsg = [];
+        if ( empty($username) ) {
+            $errMsg[] = 'No Username received';
+        } else {
+            if ( ! ctype_alnum($username) ) {
+                $errMsg[] = 'Username can only have alphanumeric characters';
+            }
+            $l = strlen($username);
+            if ( $l<4 || $l>15 ) {
+                $errMsg[] = "Username has $l characters and must be between 4 and 15";
+            }
+        }
+        if ( count($errMsg) == 0 ) {
+            return true;
+        }
+        $this->pExit($errMsg,400);
+    }
+    private function validateDigestFile() {
+        $f = _env('APACHE_DIGEST');
+        $ret = 0;
+        $errMsg = [];
+        if ( empty($f) || strlen($f) < 2 ) {
+            $errMsg[] = 'Config error: Set APACHE_DIGEST in .env file to digest passwd filename';
+            $ret = 500;
+        } else {
+            try {
+                $read  = is_readable($f) ? null : 'read';
+                $write = is_writable($f) ? null : 'write';
+                if ( $read || $write ) {
+                    $errMsg[] = "Config error: Cannot [$read $write] APACHE_DIGEST file $f";
+                    $ret = 500;
+                }
+                // Security safeguard: must have configured app in running environment first, before letting
+                // this web app act on the htdigest file
+                if ( ! $read ) {
+                    $numUsers = $this->countUsers();
+                    if ( $numUsers < 1) {
+                        $errMsg[] = 'Config error: use "wos.sh -u USERNAME" to create at least 1 admin user '.
+                                    'in realm '.self::DIGEST_REALM;
+                        $ret = 500;
+                    }
+                }
+            } catch (\Exception $ex) {
+                $errMsg[] = 'EXCEPTION: '.$ex->getMessage();
+                $ret = 500;
+            }
+        }
+        if ($ret == 0) {
+            return $numUsers;
+        }
+        $this->pExit($errMsg,$ret);
+    }
+    private function validatePassword($password) {
+        $errMsg = [];
+        if ( empty($password) ) {
+            $errMsg[] = 'No Password received';
+            $ret = 400;
+        } else {
+            if ( ! preg_match('/^[A-Za-z0-9\_\-!@#\$%^&*()=+|{}<>?]+$/',$password) ) {
+                $errMsg[] = 'Invalid password: allowed characters: A-Z a-z 0-9 _-!@#$%^&*()=+|{}<>?';
+            }
+            $len = strlen($password);
+            if ( $len<8 || $len>25 ) {
+                $errMsg[] = "Invalid password: length=$len, should be between 8 and 25";
+            }
+        }
+        if (count($errMsg)) {
+            $this->pExit($errMsg, 400);
+        }
+        return true;
+    }
     private function validateId($player_id) {
         if (!empty($player_id)) {
             $player_id = trim($player_id);
@@ -406,7 +637,7 @@ class WosController extends Controller {
                 return $int_id;
             }
         }
-        response()->exit('Invalid ID '.$player_id,400);
+        $this->pExit('Invalid ID '.$player_id,400);
     }
     private function validateGiftCode($giftCode) {
         $giftCode = trim($giftCode);
@@ -415,7 +646,7 @@ class WosController extends Controller {
                 return $giftCode;
             }
         }
-        response()->exit('Invalid Gift Code '.$giftCode,400);
+        $this->pExit('Improper Gift Code '.$giftCode,400);
     }
     private function deletePlayer($player_id) {
         try {
@@ -863,15 +1094,25 @@ Body3:
         $format = ( empty($htmlType) ? "%s\n" : "<$htmlType>%s</$htmlType>\n" );
         response()->markup( sprintf($format,$msg) );
         if ($log) {
-            $this->logInfo( $msg );
+            $this->logInfo($msg);
         }
     }
     private function pDebug($msg,$text) {
         $this->p("$msg: ".print_r($text,true),'pre',true);
     }
+    private function pExit($msg,$httpReturnCode) {
+        $lines = is_array($msg) ? $msg : [$msg];
+        $this->p('<p>');
+        foreach ($lines as $l ) {
+            $this->p('<b>ABORT:</b> '.$l.'<br/>','',true);
+        }
+        $this->p('</p>');
+        $this->htmlFooter();
+        response()->exit('',$httpReturnCode);
+    }
     private function logInfo($msg) {
         static $myPid = getmypid();
-        $this->log->info( "$myPid) ".strip_tags($msg) );
+        $this->log->info( "$myPid) ".str_replace("\n"," ",trim(strip_tags($msg))) );
     }
 }
 
