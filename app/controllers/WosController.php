@@ -16,9 +16,11 @@ class WosController extends Controller {
     const LIST_COLUMNS  = [                 // Column labels to DB field names
             'ID'                => 'id',
             'Name'              => 'player_name',
+            'Alliance'          => 'alliance_name',
             'F#'                => 'stove_lv',
             'Last Message'      => 'last_message',
-            'Last Update UTC'   => 'updated_at'
+            'Last Update UTC'   => 'updated_at',
+            'Comment'           => 'x:comment'
         ];
 
     private $time = null;   // tick() DateTime object
@@ -57,6 +59,8 @@ class WosController extends Controller {
         $this->p('<table style="margin-left:30px;">');
         $lineFormat = '<td><li><a href="/%s">/%s</a>%s</li></td>'.
                 '<td><b>%s:</b> %s</td>';
+        $this->p(sprintf($lineFormat,'alliances','alliances','',
+            'Alliance list','Manage alliances list, used to help keep track of players'),'tr');
         $this->p(sprintf($lineFormat,'players','players','',
             'Player list','Can sort and download list, plus one-click remove a player'),'tr');
         $this->p(sprintf($lineFormat,'send/','send/','[giftcode]',
@@ -89,6 +93,132 @@ class WosController extends Controller {
     /**
      * List players & last gift reward result.
      */
+    public function alliances() {
+        $this->htmlHeader('== Alliance list');
+
+        $inputFormat = '%s: <input type="text" id="%s" name="%s">';
+        $this->p('<tr><td><b>Add Alliance:</b></td><td><form action="/alliance/add" method="post">'.
+                    sprintf($inputFormat,'3-letter Name','short_name','short_name').
+                    sprintf($inputFormat,'Long Name','long_name','long_name').
+                    sprintf($inputFormat,'Extra','extra','extra').
+                    '<input type="submit" value="Add"></form></td></tr>'
+                ,'table');
+
+        $this->p('<table><tr><th width="20">#</th>');
+        $cols = ['ID'   => 'id',
+                'Name'  => 'short_name',
+                'Extra' => 'extra'
+            ];
+        foreach (array_keys($cols) as $colName) {
+            $this->p($colName,'th');
+        }
+        $this->p('<th>Actions</th></tr>');
+        $actionFormat = '<input onclick="return removeConfirm(\'%s\')" '.
+                        'type="submit" value="%s" formmethod="get"/>';
+        try {
+            $allAlliances = db()
+                ->select('alliances')
+                ->orderBy('short_name COLLATE NOCASE','asc')
+                ->all();
+            $n = 1;
+            foreach ($allAlliances as $a) {
+                $this->p('<tr>');
+                $this->p($n++.']','td');
+                foreach ( $cols as $col ) {
+                    switch ($col) {
+                        case 'short_name' :
+                            $this->p('<b>['.$a[$col].']</b>'.$a['long_name'],'td');
+                            break;
+                        case 'id' :
+                        case 'extra' :
+                            $this->p($a[$col],'td');
+                            break;
+                        default:
+                            $this->p("Unknown column $col",'td');
+                            break;
+                    }
+                }
+                $this->p(sprintf($actionFormat,'/alliance/remove/'.$a['id'],'Remove'),'th');
+                $this->p('</tr>');
+            }
+            $this->p('</table>');
+            if ( count($allAlliances)==0 ) {
+                $this->p('No alliances in the database!','p');
+            }
+            $this->logInfo('Listed '.($n-1).' alliances');
+        } catch (PDOException $ex) {
+            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
+        } catch (\Exception $ex) {
+            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p');
+        }
+        $this->htmlFooter();
+    }
+
+    /**
+     * Create a new Alliance.
+     */
+    public function allianceAdd() {
+        $this->htmlHeader('== Add Alliance');
+        $short_name = request()->get('short_name',true);
+        $long_name  = request()->get('long_name',true);
+        $extra      = request()->get('extra',true);
+        $this->p("Adding alliance name=$short_name",'p',true);
+        try {
+            // Check for duplicate
+            $result = db()
+                ->select('alliances')
+                ->where(['short_name' => $short_name])
+                ->fetchAssoc();
+            if (!empty($result)) {
+                $this->pDebug('Details',$result);
+                $this->pExit('<b>ERROR:</b> Alliance already exists, ignored.',400);
+            }
+            // All good, insert!
+            $allianceData = [
+                'id'            => null,
+                'short_name'    => $short_name,
+                'long_name'     => $long_name,
+                'extra'         => $extra,
+            ];
+            $result = db()
+                ->insert('alliances')
+                ->params($allianceData)
+                ->execute();
+            $allianceData['id'] = db()->lastInsertId();
+            $this->p('Inserted into the database: <b>'.$short_name.'</b>','p',true);
+            $this->pDebug('Details',$allianceData);
+        } catch (PDOException $ex) {
+            $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
+        } catch (\Exception $ex) {
+            $this->pExit('<b>Exception:</b> '.$ex->getMessage(),500);
+        }
+        $this->htmlFooter();
+    }
+
+    /**
+     * Remove an Alliance.
+     */
+    public function allianceRemove($alliance_id) {
+        $this->htmlHeader('== Remove Alliance');
+        $id = $this->validateId($alliance_id);
+        $result = db()
+            ->select('alliances')
+            ->find($id);
+        if (empty($result)) {
+            $this->pExit("Alliance id=$id not found",404);
+        }
+        $this->pDebug('Details',$result);
+        $count = $this->deleteById('alliances',$id);
+        if ($count == 0) {
+            $this->pExit("Could not delete Alliance id=$id ??",404);
+        }
+        $this->p("REMOVED Alliance succesfully",'p',true);
+        $this->htmlFooter();
+    }
+
+    /**
+     * List players & last gift reward result.
+     */
     public function players() {
         $this->htmlHeader('== Player list');
         $sort = strtolower(request()->params('sort','player_name' ));
@@ -114,9 +244,15 @@ class WosController extends Controller {
                 $colName),'th');
         }
         $this->p('<th>Actions</th></tr>');
-        $actionFormat = '<input onclick="return removeConfirm(\'%s\')" '.
+        $actionFormat = '<input onclick="return removeConfirm(\'/%s\')" '.
                         'type="submit" value="%s" formmethod="get"/>';
         try {
+            // Assemble alliance drop-down
+            $alliances = db()
+                ->select('alliances','id,short_name,long_name')
+                ->all();
+            $pe = new playerExtra('',$alliances);
+            // Get players
             if ($sort=='player_name') {
                 $sort = $sort.' COLLATE NOCASE';
             }
@@ -126,7 +262,8 @@ class WosController extends Controller {
                 ->all();
             $n = 1;
             foreach ($allPlayers as $p) {
-                $this->p('<tr>');
+                $pe->parseJsonExtra($p['extra']);
+                $this->p('<tr><form action="/update/'.$p['id'].'" method="post">');
                 $this->p($n++.']','td');
                 foreach ( self::LIST_COLUMNS as $col ) {
                     switch ($col) {
@@ -140,6 +277,12 @@ class WosController extends Controller {
                                         'f'.$p['stove_lv']
                                     ), 'td');
                             break;
+                        case 'alliance_name':
+                            $this->p($pe->getHtmlForm('alliance_id'),'td');
+                            break;
+                        case 'x:comment':
+                            $this->p($pe->getHtmlForm('comment'),'td');
+                            break;
                         case 'id' :
                         case 'last_message' :
                         case 'updated_at':
@@ -150,8 +293,10 @@ class WosController extends Controller {
                             break;
                     }
                 }
-                $this->p(sprintf($actionFormat,'/remove/'.$p['id'],'Remove'),'th');
-                $this->p('</tr>');
+                $this->p('<input type="submit" value="Update">'.
+                        sprintf($actionFormat,'remove/'.$p['id'],'Remove'),
+                        'th');
+                $this->p('</form></tr>');
             }
             $this->p('</table>');
             if ( count($allPlayers)==0 ) {
@@ -162,6 +307,10 @@ class WosController extends Controller {
             $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
         } catch (\Exception $ex) {
             $this->p('<b>Exception:</b> '.$ex->getMessage(),'p');
+        }
+        if ($this->dbg) {
+            array_splice($allPlayers,3);
+            #$this->pDebug('First 3 players',$allPlayers);
         }
         $this->htmlFooter();
     }
@@ -286,6 +435,12 @@ class WosController extends Controller {
                 $this->pExit('<b>'.$data->nickname.'</b> is in invalid state #'.$data->kid,404);
             }
             // All good, insert!
+            $pe = new playerExtra(); // 'extra' field pre-populated with defaults
+            $aid = db()
+                ->select('allliances','id')
+                ->where(['short_name'=>'VHL'])  // Default to VHL alliance
+                ->all();
+            $pe->alliance_id = empty($aid) ? 0 : $aid[0];
             $playerData = [
                 'id'            => $player_id,
                 'player_name'   => $data->nickname,
@@ -294,14 +449,61 @@ class WosController extends Controller {
                 'stove_lv'      => $data->stove_lv,
                 'stove_lv_content' => $data->stove_lv_content,
                 'created_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
-                'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss')
+                'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
+                'extra'         => $pe->getJson()
             ];
             $result = db()
                 ->insert('players')
                 ->params($playerData)
                 ->execute();
-            $this->p('Inserted into the database: <b>'.$data->nickname.'</b>','p',true);
+            $this->p('Inserted into the database: <b>'.$playerData['player_name'].'</b>','p',true);
             $this->pDebug('Details',$playerData);
+        } catch (PDOException $ex) {
+            $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
+        } catch (\Exception $ex) {
+            $this->pExit('<b>Exception:</b> '.$ex->getMessage(),500);
+        }
+        $this->htmlFooter();
+    }
+
+    /**
+     * Update player data
+     */
+    public function update($player_id) {
+        $this->htmlHeader('== Update player');
+        $player_id = $this->validateId($player_id);
+        $this->p("Updating player id=$player_id",'p',true);
+        try {
+            // Check for duplicate before hitting WOS API
+            $playerData = db()
+                ->select('players')
+                ->find($player_id);
+            if (empty($playerData)) {
+                $this->pExit('<b>ERROR:</b> player ID not found',404);
+            }
+
+            // Retrieve POST parameters
+            $params = request()->body(true);
+            if ( empty($params) ) {
+                $this->pExit('<b>ERROR:</b> no data to update',400);
+            }
+            $pe = new playerExtra( json_encode($params, JSON_UNESCAPED_UNICODE) );
+            $data = [
+                'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
+                'extra'         => $pe->getJson()
+            ];
+            $result = db()
+                ->update('players')
+                ->params($data)
+                ->where(['id' => $player_id])
+                ->execute();
+
+            // Done, show results!
+            $this->p('Updated: <b>'.$playerData['player_name'].'</b>','p',true);
+            unset($playerData['extra']);
+            $playerData['updated_at'] = $data['updated_at'];
+            $data = array_merge($playerData,$pe->getArray());
+            $this->pDebug('Details',$data);
         } catch (PDOException $ex) {
             $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
         } catch (\Exception $ex) {
@@ -323,7 +525,7 @@ class WosController extends Controller {
             $this->pExit("Player id=$player_id not found",404);
         }
         $this->pDebug('Details',$result);
-        $count = $this->deletePlayer($player_id);
+        $count = $this->deleteById('players',$player_id);
         if ($count == 0) {
             $this->pExit("Could not delete player id=$player_id ??",404);
         }
@@ -665,11 +867,11 @@ class WosController extends Controller {
         }
         $this->pExit('Improper Gift Code '.$giftCode,400);
     }
-    private function deletePlayer($player_id) {
+    private function deleteById($table,$id) {
         try {
             $result = db()
-                ->delete('players')
-                ->where(['id' => $player_id])
+                ->delete($table)
+                ->where(['id' => $id])
                 ->execute();
             return $result->rowCount();
         } catch (PDOException $ex) {
@@ -721,7 +923,7 @@ class WosController extends Controller {
         if ($sd->kid!=self::OUR_STATE || $signInResponse['err_code'] == 40004) {
             // 40004 = Player doesn't exist
             $this->p('DELETING player: invalid user or state (#'.$sd->kid.')</p>',0,true);
-            if ( $this->deletePlayer($p['id']) == -1 ) {
+            if ( $this->deleteById('players',$p['id']) == -1 ) {
                 // Exception thrown during delete, so let's just stop
                 return null;
             }
@@ -1081,6 +1283,7 @@ Body3:
 
         $this->p('<table><tr >');
         $this->p('<a href="/">Home</a>','td');
+        $this->p('| <a href="/alliances">Alliances</a>','td');
         $this->p('| <a href="/players">Players</a>','td');
         $this->p('|','td');
         $this->p($this->menuForm('Add'),'td');
@@ -1130,6 +1333,113 @@ Body3:
     private function logInfo($msg) {
         static $myPid = getmypid();
         $this->log->info( "$myPid) ".str_replace("\n"," ",trim(strip_tags($msg))) );
+    }
+}
+
+class playerExtra {
+    public $alliance_id = 0;
+    public $comment     = '';
+    public $rank        = 0;
+    #public $power;
+
+    const F_STRING   = 1;
+    const F_INT      = 2;
+    const F_RANK     = 3; // numbers 1-5
+    const F_ALLIANCE = 4; // "join" with alliance_id from database
+
+    private $log;
+    private $fields = [
+        'alliance_id'   => self::F_ALLIANCE,
+        'comment'       => self::F_STRING,
+        'rank'          => self::F_RANK
+        #'power'         => self::F_INT
+    ];
+    private $alliances; // Valid values for alliance_id & name
+    private $ranks;     // Valid values for rank (R1-R5)
+
+    /**
+     * @param string $extra     Optional JSON string stored in 'extra' DB column
+     * @param array  $alliances Optional array of "SELECT * from alliances"
+     */
+    public function __construct(string $extra='', array $alliances=[]) {
+        $this->log = app()->logger();
+        $this->parseJsonExtra($extra);
+
+        // Pre-populate drop-down fields with valid values
+        $this->alliances[0] = '-';
+        foreach ($alliances as $a) {
+            $this->alliances[$a['id']] = sprintf('[%s]%s',$a['short_name'],$a['long_name']);
+        }
+        $this->ranks[0] = '-';
+        for ($i=1; $i<6; $i++) {
+            $this->ranks[$i] = "R$i";
+        }
+        #$this->log->info(print_r($this->alliances,true));
+    }
+
+    /**
+     * Returns the HTML of a form field to display current value + input
+     */
+    public function getHtmlForm($field) {
+        $type = ! isset($this->fields[$field]) ? self::F_STRING : $this->fields[$field];
+        switch ($type) {
+            case self::F_ALLIANCE:
+                $options = &$this->alliances;
+                break;
+            case self::F_RANK:
+                $options = &$this->ranks;
+                break;
+            case self::F_INT:
+                return sprintf('<input type="number" id="%s" name="%s" value="%d">',
+                            $field,$field,$this->$field);
+            case self::F_STRING:
+                return sprintf('<input type="text" id="%s" name="%s" size="%d" value="%s">',
+                            $field,$field,($field=='comment' ? 30 : 10),$this->$field);
+            default:
+                return "Unknown field type $type for field $field";
+        }
+        // Drop-down selection:
+        $ret = "<select name=\"$field\" id=\"$field\">";
+        $targetId = (isset($options[$this->$field]) ? $this->$field : 0);
+        foreach ($options as $id => $name) {
+            $ret .= sprintf( '<option value="%d"%s>%s</option>',
+                        $id,($id==$targetId ? ' selected' : ''),$name );
+        }
+        $ret .= '</select>';
+        return $ret;
+    }
+
+    /**
+     * Set or replace object values
+     * @param string $extra     JSON string stored in 'extra' DB column
+     */
+    public function parseJsonExtra($extra) {
+        if (empty($extra)) {
+            return;
+        }
+        try {
+            $x = json_decode($extra);
+            foreach ($x as $name => $value) {
+                $this->$name = $value;
+            }
+        } catch (\Exception $e) {
+            $this->log->info(__METHOD__.' Exception: '.$e->getMessage());
+            $this->log->info('extra='.$extra);
+        }
+    }
+
+    /**
+     * Returns JSON-encoded string of playerExtra object
+     */
+    public function getJson() {
+        return json_encode($this, JSON_UNESCAPED_UNICODE);
+    }
+    public function getArray() {
+        $a = [];
+        foreach (array_keys($this->fields) as $field) {
+            $a[$field] = $this->$field;
+        }
+        return $a;
     }
 }
 
