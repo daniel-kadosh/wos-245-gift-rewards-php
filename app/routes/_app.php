@@ -26,6 +26,7 @@ app()->post("/changepass", "WosController@adminChangePassword");    // POST: psw
 app()->get("/alliances", "WosController@alliances");
 app()->post("/alliance/add", "WosController@allianceAdd");          // POST: short_name, long_name, extra
 app()->get("/alliance/remove/{alliance_id}", "WosController@allianceRemove");
+app()->post("/alliance/update/{alliance_id}", "WosController@allianceUpdate");
 
 // Debugging...
 if (_env('APP_DEBUG')=='true') {

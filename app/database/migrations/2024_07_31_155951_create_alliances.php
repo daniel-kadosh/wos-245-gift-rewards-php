@@ -41,7 +41,7 @@ class CreateAlliances extends Database
                 $table->id('id');
                 $table->string('short_name')->unique();
                 $table->string('long_name');
-                $table->longText('extra')->nullable();
+                $table->longText('comment')->nullable();
             });
         }
         if (!static::$capsule::schema()->hasColumn("players","alliance_id")) {

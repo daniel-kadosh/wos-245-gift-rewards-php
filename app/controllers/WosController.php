@@ -16,10 +16,10 @@ class WosController extends Controller {
     const LIST_COLUMNS  = [                 // Column labels to DB field names
             'ID'                => 'id',
             'Name'              => 'player_name',
-            'Alliance'          => 'alliance_name',
             'F#'                => 'stove_lv',
             'Last Message'      => 'last_message',
             'Last Update UTC'   => 'updated_at',
+            'Alliance'          => 'x:alliance_name',
             'Comment'           => 'x:comment'
         ];
 
@@ -95,61 +95,51 @@ class WosController extends Controller {
      */
     public function alliances() {
         $this->htmlHeader('== Alliance list');
+        $inputFormat = '<input placeholder="%s" type="text" id="%s" name="%s" size="%d">';
+        $this->p('<table>');
+        $this->p('<td><b>Add Alliance:</b></td><td colspan="2">'.
+                    $this->allianceForm('Add').'</td>'
+                    ,'tr');
+        $this->p('<td><b>Remove Alliance:</b></td>'.
+                    '<td>'.$this->menuForm('alliance/Remove','alliance ID','').'</td>'.
+                    '<td><b><== CAN MESS UP PLAYER DATABASE</b></td>'
+                    ,'tr');
 
-        $inputFormat = '%s: <input type="text" id="%s" name="%s">';
-        $this->p('<tr><td><b>Add Alliance:</b></td><td><form action="/alliance/add" method="post">'.
-                    sprintf($inputFormat,'3-letter Name','short_name','short_name').
-                    sprintf($inputFormat,'Long Name','long_name','long_name').
-                    sprintf($inputFormat,'Extra','extra','extra').
-                    '<input type="submit" value="Add"></form></td></tr>'
-                ,'table');
-
-        $this->p('<table><tr><th width="20">#</th>');
+        $this->p('</table>');
+        $this->p('<table><tr>');
         $cols = ['ID'   => 'id',
-                'Name'  => 'short_name',
-                'Extra' => 'extra'
+                'Short Name'  => 'short_name',
+                'Long Name'  => 'long_name',
+                'Comment' => 'comment'
             ];
         foreach (array_keys($cols) as $colName) {
             $this->p($colName,'th');
         }
-        $this->p('<th>Actions</th></tr>');
-        $actionFormat = '<input onclick="return removeConfirm(\'%s\')" '.
-                        'type="submit" value="%s" formmethod="get"/>';
+        $this->p('<th>Action</th></tr>');
         try {
             $allAlliances = db()
                 ->select('alliances')
-                ->orderBy('short_name COLLATE NOCASE','asc')
+                ->orderBy('short_name','asc')
                 ->all();
-            $n = 1;
+            $n = 0;
             foreach ($allAlliances as $a) {
-                $this->p('<tr>');
-                $this->p($n++.']','td');
-                foreach ( $cols as $col ) {
-                    switch ($col) {
-                        case 'short_name' :
-                            $this->p('<b>['.$a[$col].']</b>'.$a['long_name'],'td');
-                            break;
-                        case 'id' :
-                        case 'extra' :
-                            $this->p($a[$col],'td');
-                            break;
-                        default:
-                            $this->p("Unknown column $col",'td');
-                            break;
-                    }
-                }
-                $this->p(sprintf($actionFormat,'/alliance/remove/'.$a['id'],'Remove'),'th');
-                $this->p('</tr>');
+                $n++;
+                #$this->p('<tr>');
+                $this->p($this->allianceForm('Update',$a),'tr');
+                #$this->p(sprintf('<input onclick="return removeConfirm(\'%s\')" '.
+                #                   'type="submit" value="%s" formmethod="get"/>',
+                #                   '/alliance/remove/'.$a['id'],'Remove'),'td');
+                #$this->p('</tr>');
             }
             $this->p('</table>');
-            if ( count($allAlliances)==0 ) {
+            if ( $n==0 ) {
                 $this->p('No alliances in the database!','p');
             }
-            $this->logInfo('Listed '.($n-1).' alliances');
+            $this->logInfo("Listed $n alliances");
         } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
+            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p',true);
         } catch (\Exception $ex) {
-            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p');
+            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p',true);
         }
         $this->htmlFooter();
     }
@@ -159,10 +149,11 @@ class WosController extends Controller {
      */
     public function allianceAdd() {
         $this->htmlHeader('== Add Alliance');
-        $short_name = request()->get('short_name',true);
-        $long_name  = request()->get('long_name',true);
-        $extra      = request()->get('extra',true);
-        $this->p("Adding alliance name=$short_name",'p',true);
+        $allianceData = ['id' => null];
+        $this->validateAllianceData($allianceData);
+
+        $short_name = $allianceData['short_name'];
+        $this->p("Adding alliance name=<b>$short_name</b>",'p',true);
         try {
             // Check for duplicate
             $result = db()
@@ -174,18 +165,45 @@ class WosController extends Controller {
                 $this->pExit('<b>ERROR:</b> Alliance already exists, ignored.',400);
             }
             // All good, insert!
-            $allianceData = [
-                'id'            => null,
-                'short_name'    => $short_name,
-                'long_name'     => $long_name,
-                'extra'         => $extra,
-            ];
             $result = db()
                 ->insert('alliances')
                 ->params($allianceData)
                 ->execute();
             $allianceData['id'] = db()->lastInsertId();
-            $this->p('Inserted into the database: <b>'.$short_name.'</b>','p',true);
+            $this->p('Added succesfully!','p',true);
+            $this->pDebug('Details',$allianceData);
+        } catch (PDOException $ex) {
+            $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
+        } catch (\Exception $ex) {
+            $this->pExit('<b>Exception:</b> '.$ex->getMessage(),500);
+        }
+        $this->htmlFooter();
+    }
+
+    /**
+     * Update existing Alliance.
+     */
+    public function allianceUpdate($alliance_id) {
+        $this->htmlHeader('== Update Alliance');
+        try {
+            $id = $this->validateId($alliance_id);
+            $allianceData = db()
+                ->select('alliances')
+                ->find($id);
+            if (empty($allianceData)) {
+                $this->pExit("Alliance id=$id not found",404);
+            }
+            $this->validateAllianceData($allianceData);
+
+            // All good, update!
+            $short_name = $allianceData['short_name'];
+            $this->p("Updating alliance name=<b>$short_name</b>",'p',true);
+            $result = db()
+                ->update('alliances')
+                ->params($allianceData)
+                ->where(['id' => $id])
+                ->execute();
+            $this->p('Updated succesfully!','p',true);
             $this->pDebug('Details',$allianceData);
         } catch (PDOException $ex) {
             $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
@@ -221,6 +239,7 @@ class WosController extends Controller {
      */
     public function players() {
         $this->htmlHeader('== Player list');
+        // Validation
         $sort = strtolower(request()->params('sort','player_name' ));
         $dir  = strtolower(request()->params('dir' ,'asc'));
         if ( array_search($sort,self::LIST_COLUMNS,true) === false ) {
@@ -231,36 +250,53 @@ class WosController extends Controller {
             $this->p(" (Ignored invalid sort direction $dir)");
             $dir = 'asc';
         }
-        $this->p('<table><tr><th width="20">#</th>');
-        $colFormat = '<a href="/players?sort=%s&dir=%s">%s</a>';
-        foreach (array_keys(self::LIST_COLUMNS) as $colName) {
+
+        // Assemble headers for table
+        $xCols = 0;
+        foreach (self::LIST_COLUMNS as $dbField) {
+            if (substr($dbField,0,2)=='x:') {
+                $xCols++;
+            }
+        }
+        $leftCols = count(self::LIST_COLUMNS) - $xCols + 1;
+        $this->p('<table><tr><td colspan="'.$leftCols.'"></td>'.
+                    '<td style="text-align: center; border-bottom: 1px solid;" colspan="'.$xCols.'">'.
+                    '(fields to manage manually)</td><td></td></tr>'
+            );
+        $this->p('<tr><th width="30">#</th>');
+        foreach (self::LIST_COLUMNS as $colName => $dbField) {
             $newDir = 'asc';
-            if ( $sort == self::LIST_COLUMNS[$colName] ) {
+            if ( $sort == $dbField ) {
                 $newDir = ($dir=='asc' ? 'desc' : 'asc');
             }
-            $this->p(sprintf($colFormat,
-                self::LIST_COLUMNS[$colName],
-                $newDir,
-                $colName),'th');
+            $this->p( sprintf('<a href="/players?sort=%s&dir=%s">%s</a>',
+                                $dbField,
+                                $newDir,
+                                $colName), 'th');
         }
         $this->p('<th>Actions</th></tr>');
-        $actionFormat = '<input onclick="return removeConfirm(\'/%s\')" '.
-                        'type="submit" value="%s" formmethod="get"/>';
+
         try {
-            // Assemble alliance drop-down
-            $alliances = db()
-                ->select('alliances','id,short_name,long_name')
-                ->all();
-            $pe = new playerExtra('',$alliances);
-            // Get players
-            if ($sort=='player_name') {
-                $sort = $sort.' COLLATE NOCASE';
-            }
+            // Assemble players array
+            $dbSort = substr($sort,0,2) == 'x:' ? 'player_name' : $sort;
             $allPlayers = db()
                 ->select('players')
-                ->orderBy($sort,$dir)
+                ->orderBy($dbSort.' COLLATE NOCASE',$dir)
                 ->all();
+            $pe = new playerExtra('',true);
+            foreach ($allPlayers as $key => $p) {
+                $pe->parseJsonExtra($p['extra']);
+                $allPlayers[$key] = array_merge($p,$pe->getArray(true));
+            }
+            if ( substr($sort,0,2) == 'x:' ) {
+                // Re-sort with key from extra field
+                usort($allPlayers, $this->build_sorter( substr($sort,2), $dir ));
+            }
+
+            // Display
             $n = 1;
+            $actionFormat = '<input onclick="return removeConfirm(\'/%s\')" '.
+                                'type="submit" value="%s" formmethod="get"/>';
             foreach ($allPlayers as $p) {
                 $pe->parseJsonExtra($p['extra']);
                 $this->p('<tr><form action="/update/'.$p['id'].'" method="post">');
@@ -277,7 +313,7 @@ class WosController extends Controller {
                                         'f'.$p['stove_lv']
                                     ), 'td');
                             break;
-                        case 'alliance_name':
+                        case 'x:alliance_name':
                             $this->p($pe->getHtmlForm('alliance_id'),'td');
                             break;
                         case 'x:comment':
@@ -308,10 +344,6 @@ class WosController extends Controller {
         } catch (\Exception $ex) {
             $this->p('<b>Exception:</b> '.$ex->getMessage(),'p');
         }
-        if ($this->dbg) {
-            array_splice($allPlayers,3);
-            #$this->pDebug('First 3 players',$allPlayers);
-        }
         $this->htmlFooter();
     }
 
@@ -331,7 +363,7 @@ class WosController extends Controller {
         try {
             $allPlayers = db()
                 ->select('players')
-                ->where('last_message', 'not like', $giftCode.'%')
+                ->where('last_message', 'not like', $giftCode.': %')
                 ->orderBy('id','asc')
                 ->all();
             $numPlayers = count($allPlayers);
@@ -343,6 +375,7 @@ class WosController extends Controller {
                 $this->p("numPlayers=$numPlayers",'p',true);
             }
             foreach ($allPlayers as $p) {
+                usleep(100000); // 100msec slow-down between players
                 if ( $this->badResponsesLeft < 1 ) {
                     break;
                 }
@@ -437,10 +470,10 @@ class WosController extends Controller {
             // All good, insert!
             $pe = new playerExtra(); // 'extra' field pre-populated with defaults
             $aid = db()
-                ->select('allliances','id')
+                ->select('alliances','id')
                 ->where(['short_name'=>'VHL'])  // Default to VHL alliance
-                ->all();
-            $pe->alliance_id = empty($aid) ? 0 : $aid[0];
+                ->first();
+            $pe->alliance_id = empty($aid) ? 0 : $aid['id'];
             $playerData = [
                 'id'            => $player_id,
                 'player_name'   => $data->nickname,
@@ -867,6 +900,37 @@ class WosController extends Controller {
         }
         $this->pExit('Improper Gift Code '.$giftCode,400);
     }
+    private function validateAllianceData(&$existingAllianceData) {
+        $lengths = [
+            'short_name' => [3,3],
+            'long_name'  => [3,15],
+            'comment'    => [0,30]
+        ];
+        $body = request()->body(true);
+        $errMsg = [];
+        $paramsFound = 0;
+        foreach ($lengths as $field => $lengths) {
+            if ( isset($body[$field]) ) {
+                $v = trim($body[$field]);
+                $l = strlen($v);
+                if ($l<$lengths[0] || $l>$lengths[1]) {
+                    $errMsg[] = sprintf("$field was $l characters long, needs to be between %d and %d",
+                            $lengths[0], $lengths[1]);
+                } else {
+                    $paramsFound++;
+                    $existingAllianceData[$field] = $v;
+                }
+            } else if ( ! isset($existingAllianceData[$field]) ) {
+                $existingAllianceData[$field] = '';
+            }
+        }
+        if ( $paramsFound == 0 ) {
+            $errMsg[] = 'No valid parameters received in request body';
+        }
+        if ( ! empty($errMsg) ) {
+            $this->pExit($errMsg,400);
+        }
+    }
     private function deleteById($table,$id) {
         try {
             $result = db()
@@ -1027,7 +1091,7 @@ class WosController extends Controller {
                 db()->update('players')
                     ->params([
                         'last_message'  => $msg,
-                        'updated_at'    => $this->getTimestring(false,false)
+                        'updated_at'    => $this->getTimestring(true,false)
                     ])
                     ->where(['id' => $playerId])
                     ->execute();
@@ -1286,11 +1350,11 @@ Body3:
         $this->p('| <a href="/alliances">Alliances</a>','td');
         $this->p('| <a href="/players">Players</a>','td');
         $this->p('|','td');
-        $this->p($this->menuForm('Add'),'td');
+        $this->p($this->menuForm('Add','player ID'),'td');
         $this->p('|','td');
-        $this->p($this->menuForm('Remove'),'td');
+        $this->p($this->menuForm('Remove','player ID'),'td');
         $this->p('|','td');
-        $this->p($this->menuForm('Send','Send Giftcode'),'td');
+        $this->p($this->menuForm('Send','gift code','Send Giftcode'),'td');
         $this->p('</tr></table>');
         if ($title) {
             $this->p($title,'h3');
@@ -1299,16 +1363,45 @@ Body3:
     private function htmlFooter() {
         $this->p('</body></html>');
     }
-    private function menuForm($action,$buttonName='') {
+    private function menuForm($action,$placeHolder='',$buttonName='') {
         $lAction = strtolower($action);
         if (empty($buttonName)) {
             $buttonName = $action;
         }
         $idField = $lAction.'Id';
+        if ( ! empty($placeHolder) ) {
+            $placeHolder = ' placeholder="'.$placeHolder.'"';
+        }
         return "<form onsubmit=\"return formConfirm('$lAction','$idField');\">".
-                "<input type=\"text\" id=\"$idField\" name=\"$idField\" size=\"10\">".
-                "<button value=\"$action\">$buttonName</button>".
+                "<input type=\"text\" id=\"$idField\" name=\"$idField\" size=\"10\"".
+                $placeHolder."><button value=\"$action\">$buttonName</button>".
                 '</form>';
+    }
+    private function allianceForm($action,$data=[]) {
+        $aFields = [
+            'short_name' => ['3-letter Name', 7  ],
+            'long_name'  => ['Long Name',     15 ],
+            'comment'    => ['Comment',       30 ]
+        ];
+        $aId = empty($data['id']) ? 0 : $data['id'];
+        $ret = sprintf('<form action="/alliance/%s%s" method="post">%s',
+                        strtolower($action),
+                        $aId ? "/$aId" : '',
+                        $aId ? "<td>$aId</td>\n" : "\n"
+                    );
+        foreach ($aFields as $field => $fieldInfo) {
+            $ret .= sprintf('%s<input placeholder="%s" type="text" id="%s" name="%s" size="%d"%s>%s',
+                        $aId ? '<td>' : '',
+                        $fieldInfo[0], $field, $field, $fieldInfo[1],
+                        empty($data[$field]) ? '' : ' value="'.$data[$field].'"',
+                        $aId ? "</td>\n" : "\n"
+                    );
+        }
+        return $ret.sprintf('%s<input type="submit" value="%s"></form>%s',
+                    $aId ? "<td>" : '',
+                    $action,
+                    $aId ? "</td>" : "\n"
+                );
     }
     private function p($msg,$htmlType=null,$log=false) {
         $format = ( empty($htmlType) ? "%s\n" : "<$htmlType>%s</$htmlType>\n" );
@@ -1334,12 +1427,21 @@ Body3:
         static $myPid = getmypid();
         $this->log->info( "$myPid) ".str_replace("\n"," ",trim(strip_tags($msg))) );
     }
+
+    public function build_sorter($key, $dir) {
+        // Handle asc vs. desc order with multiplier
+        $multiplier = ($dir=='asc' ? 1 : -1);
+        $key2 = 'player_name';
+        return function ($a, $b) use ($key,$key2,$multiplier) {
+            return strcmp($a[$key].strtolower($a[$key2]), $b[$key].strtolower($b[$key2])) * $multiplier;
+        };
+    }
 }
 
 class playerExtra {
     public $alliance_id = 0;
     public $comment     = '';
-    public $rank        = 0;
+    #public $rank        = 0;
     #public $power;
 
     const F_STRING   = 1;
@@ -1351,7 +1453,7 @@ class playerExtra {
     private $fields = [
         'alliance_id'   => self::F_ALLIANCE,
         'comment'       => self::F_STRING,
-        'rank'          => self::F_RANK
+        #'rank'          => self::F_RANK
         #'power'         => self::F_INT
     ];
     private $alliances; // Valid values for alliance_id & name
@@ -1359,21 +1461,28 @@ class playerExtra {
 
     /**
      * @param string $extra     Optional JSON string stored in 'extra' DB column
-     * @param array  $alliances Optional array of "SELECT * from alliances"
+     * @param array  $getAlliances Optional boolean to get alliances from the database
      */
-    public function __construct(string $extra='', array $alliances=[]) {
+    public function __construct(string $extra='', $getAlliances=false) {
         $this->log = app()->logger();
         $this->parseJsonExtra($extra);
 
         // Pre-populate drop-down fields with valid values
         $this->alliances[0] = '-';
-        foreach ($alliances as $a) {
-            $this->alliances[$a['id']] = sprintf('[%s]%s',$a['short_name'],$a['long_name']);
+        if ($getAlliances) {
+            $alliances = db()
+                ->select('alliances',"id,'[' || short_name || ']' || long_name as alliance_name")
+                ->all();
+            foreach ($alliances as $a) {
+                $this->alliances[$a['id']] = $a['alliance_name'];
+            }
         }
+        /*
         $this->ranks[0] = '-';
         for ($i=1; $i<6; $i++) {
             $this->ranks[$i] = "R$i";
         }
+        */
         #$this->log->info(print_r($this->alliances,true));
     }
 
@@ -1434,10 +1543,17 @@ class playerExtra {
     public function getJson() {
         return json_encode($this, JSON_UNESCAPED_UNICODE);
     }
-    public function getArray() {
+    /**
+     * Get public properties as an array
+     * @param includeHidden Optional boolean to include hidden fields
+     */
+    public function getArray($includeHidden=false) {
         $a = [];
         foreach (array_keys($this->fields) as $field) {
             $a[$field] = $this->$field;
+        }
+        if ($includeHidden) {
+            $a['alliance_name'] = $this->alliances[ intval($this->alliance_id) ];
         }
         return $a;
     }
