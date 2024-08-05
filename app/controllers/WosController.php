@@ -12,6 +12,7 @@ use PDOException;
 class WosController extends Controller {
     const HASH          = "tB87#kPtkxqOS2"; // WOS API secret
     const OUR_STATE     = 245;              // State number restriction
+    const OUR_ALLIANCE  = 'VHL';
     const DIGEST_REALM  = 'wos245';         // Apache digest auth realm
     const LIST_COLUMNS  = [                 // Column labels to DB field names
             'ID'                => 'id',
@@ -21,6 +22,12 @@ class WosController extends Controller {
             'Last Update UTC'   => 'updated_at',
             'Alliance'          => 'x:alliance_name',
             'Comment'           => 'x:comment'
+        ];
+    const ALLIANCE_COLUMNS = [
+            'ID'            => 'id',
+            'Short Name'    => 'short_name',
+            'Long Name'     => 'long_name',
+            'Comment'       => 'comment'
         ];
 
     private $time = null;   // tick() DateTime object
@@ -52,22 +59,25 @@ class WosController extends Controller {
     }
 
     /**
-     * Default menu.
+     * Default Home menu.
      */
-    public function index() {
+    public function home() {
         $this->htmlHeader('== Application capabilities:');
         $this->p('<table style="margin-left:30px;">');
         $lineFormat = '<td><li><a href="/%s">/%s</a>%s</li></td>'.
                 '<td><b>%s:</b> %s</td>';
         $this->p(sprintf($lineFormat,'alliances','alliances','',
-            'Alliance list','Manage alliances list, used to help keep track of players'),'tr');
+            'Alliance list','Manage alliances list, used to help keep track of players.'),'tr');
         $this->p(sprintf($lineFormat,'players','players','',
-            'Player list','Can sort and download list, plus one-click remove a player'),'tr');
+            'Player list','Can sort list and easily update &amp; remove players.'),'tr');
         $this->p(sprintf($lineFormat,'send/','send/','[giftcode]',
-            'Send a reward','to send ALL players the giftcode.'.
-            '<br/><b>NOTE:</b> page will take 2-5 minutes to show anything, let it run and wait!'),'tr');
+            'Send a reward','to send ALL players the giftcode if they don\'t have it yet.'.
+            '<br/><b>NOTE:</b> page will take 2-5 minutes to show anything, let it run and wait!'.
+            '<br/>Player will be verified with WOS and <b>DELETED</b> if not found or not in state #'.
+            self::OUR_STATE.'.'),'tr');
         $this->p(sprintf($lineFormat,'add/','add/','[playerID]',
-            'Add a player','Will get basic player info and check they are in state #'.self::OUR_STATE),'tr');
+            'Add a player','Will get basic player info from WOS and check they are in state #'.self::OUR_STATE.
+            '.<br/>By default will add in alliance ['.self::OUR_ALLIANCE.'] but you can change afterwards.'),'tr');
         $this->p(sprintf($lineFormat,'remove/','remove/','[playerID]',
             'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
         $this->p(sprintf($lineFormat,'download','download/','[format]',
@@ -101,25 +111,19 @@ class WosController extends Controller {
                     $this->allianceForm('Add').'</td>'
                     ,'tr');
         $this->p('<td><b>Remove Alliance:</b></td>'.
-                    '<td>'.$this->menuForm('alliance/Remove','alliance ID','').'</td>'.
+                    '<td>'.$this->menuForm('alliance/Remove','alliance ID').'</td>'.
                     '<td><b><== CAN MESS UP PLAYER DATABASE</b></td>'
                     ,'tr');
-
         $this->p('</table>');
         $this->p('<table><tr>');
-        $cols = ['ID'   => 'id',
-                'Short Name'  => 'short_name',
-                'Long Name'  => 'long_name',
-                'Comment' => 'comment'
-            ];
-        foreach (array_keys($cols) as $colName) {
+        foreach (array_keys(self::ALLIANCE_COLUMNS) as $colName) {
             $this->p($colName,'th');
         }
         $this->p('<th>Action</th></tr>');
         try {
             $allAlliances = db()
                 ->select('alliances')
-                ->orderBy('short_name','asc')
+                ->orderBy('id','asc')
                 ->all();
             $n = 0;
             foreach ($allAlliances as $a) {
@@ -136,6 +140,10 @@ class WosController extends Controller {
                 $this->p('No alliances in the database!','p');
             }
             $this->logInfo("Listed $n alliances");
+
+            $this->p("We only need the alliances that our players are in, ".
+                    "so that the player list has this information.<br/>".
+                    "We can't get this information from WOS APIs :-(", 'p');
         } catch (PDOException $ex) {
             $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p',true);
         } catch (\Exception $ex) {
@@ -240,11 +248,11 @@ class WosController extends Controller {
     public function players() {
         $this->htmlHeader('== Player list');
         // Validation
-        $sort = strtolower(request()->params('sort','player_name' ));
+        $sort = strtolower(request()->params('sort','player_name'));
         $dir  = strtolower(request()->params('dir' ,'asc'));
         if ( array_search($sort,self::LIST_COLUMNS,true) === false ) {
             $this->p(" (Ignored invalid sort column $sort)");
-            $sort = 'id';
+            $sort = 'player_name';
         }
         if ( array_search($dir,['asc','desc'],true) === false) {
             $this->p(" (Ignored invalid sort direction $dir)");
@@ -281,16 +289,15 @@ class WosController extends Controller {
             $dbSort = substr($sort,0,2) == 'x:' ? 'player_name' : $sort;
             $allPlayers = db()
                 ->select('players')
-                ->orderBy($dbSort.' COLLATE NOCASE',$dir)
+                ->orderBy("$dbSort COLLATE NOCASE",$dir)
                 ->all();
             $pe = new playerExtra('',true);
             foreach ($allPlayers as $key => $p) {
                 $pe->parseJsonExtra($p['extra']);
                 $allPlayers[$key] = array_merge($p,$pe->getArray(true));
             }
-            if ( substr($sort,0,2) == 'x:' ) {
-                // Re-sort with key from extra field
-                usort($allPlayers, $this->build_sorter( substr($sort,2), $dir ));
+            if ( substr($sort,0,2) == 'x:' ) {  // Re-sort with key from extra field
+                usort($allPlayers, $this->buildSorter( substr($sort,2), $dir ));
             }
 
             // Display
@@ -329,10 +336,10 @@ class WosController extends Controller {
                             break;
                     }
                 }
-                $this->p('<input type="submit" value="Update">'.
+                $this->p('<input type="submit" value="Update"></form>'.
                         sprintf($actionFormat,'remove/'.$p['id'],'Remove'),
                         'th');
-                $this->p('</form></tr>');
+                $this->p('</tr>');
             }
             $this->p('</table>');
             if ( count($allPlayers)==0 ) {
@@ -353,13 +360,12 @@ class WosController extends Controller {
     public function send($giftCode) {
         $this->htmlHeader('== Send Gift Code');
         $this->validateGiftCode($giftCode);
-        $this->p("Sending <b>$giftCode</b> to all players that haven't received it:",'p');
+        $this->p("Sending <b>$giftCode</b> to all players that haven't yet received it:",'p');
         $httpReturnCode = 200;
         $errMsg = [];
         $n = 0; // # of players attempted
         $xrlrPauseTime = 61; // sleep time when reaching x-ratelimit-remaining
-        // Max bad responses (network error) from API before abort
-        $this->badResponsesLeft = 3;
+        $this->badResponsesLeft = 3; // Max bad responses (network error) from API before abort
         try {
             $allPlayers = db()
                 ->select('players')
@@ -382,7 +388,7 @@ class WosController extends Controller {
                 $n++;
                 $signInResponse = $this->verifyPlayerInWOS($p);
                 if ( $signInResponse == null ) {
-                    // Do not continue process
+                    // Do not continue process, API problem
                     break;
                 } else if ( ! $signInResponse['playerGood'] ) {
                     // Invalid sign-in, ignore this player
@@ -401,7 +407,7 @@ class WosController extends Controller {
 
                 $giftResponse = $this->send1Giftcode($p['id'],$giftCode);
                 if ( $giftResponse == null ) {
-                    // Do not continue process
+                    // Do not continue process, API problem
                     break;
                 }
 
@@ -471,7 +477,7 @@ class WosController extends Controller {
             $pe = new playerExtra(); // 'extra' field pre-populated with defaults
             $aid = db()
                 ->select('alliances','id')
-                ->where(['short_name'=>'VHL'])  // Default to VHL alliance
+                ->where(['short_name'=>self::OUR_ALLIANCE])  // Default to VHL alliance
                 ->first();
             $pe->alliance_id = empty($aid) ? 0 : $aid['id'];
             $playerData = [
@@ -489,7 +495,7 @@ class WosController extends Controller {
                 ->insert('players')
                 ->params($playerData)
                 ->execute();
-            $this->p('Inserted into the database: <b>'.$playerData['player_name'].'</b>','p',true);
+            $this->p('Player added into the database: <b>'.$playerData['player_name'].'</b>','p',true);
             $this->pDebug('Details',$playerData);
         } catch (PDOException $ex) {
             $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
@@ -525,18 +531,23 @@ class WosController extends Controller {
                 'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
                 'extra'         => $pe->getJson()
             ];
-            $result = db()
+            $rowsUpdated = db()
                 ->update('players')
                 ->params($data)
                 ->where(['id' => $player_id])
-                ->execute();
+                ->execute()
+                ->rowCount();
 
             // Done, show results!
-            $this->p('Updated: <b>'.$playerData['player_name'].'</b>','p',true);
-            unset($playerData['extra']);
-            $playerData['updated_at'] = $data['updated_at'];
-            $data = array_merge($playerData,$pe->getArray());
-            $this->pDebug('Details',$data);
+            if ( $rowsUpdated>0 ) {
+                $this->p('Updated: <b>'.$playerData['player_name'].'</b>','p',true);
+                unset($playerData['extra']);
+                $playerData['updated_at'] = $data['updated_at'];
+                $data = array_merge($playerData,$pe->getArray());
+                $this->pDebug('Details',$data);
+            } else {
+                $this->pExit('No rows updated for <b>'.$playerData['player_name'].'</b>',500);
+            }
         } catch (PDOException $ex) {
             $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
         } catch (\Exception $ex) {
@@ -551,6 +562,7 @@ class WosController extends Controller {
     public function remove($player_id) {
         $this->htmlHeader('== Remove player');
         $player_id = $this->validateId($player_id);
+        $this->p("Removing player id=$player_id",'p',true);
         $result = db()
             ->select('players')
             ->find($player_id);
@@ -562,7 +574,7 @@ class WosController extends Controller {
         if ($count == 0) {
             $this->pExit("Could not delete player id=$player_id ??",404);
         }
-        $this->p("REMOVED player succesfully",'p',true);
+        $this->p("REMOVED player ID=$player_id succesfully",'p',true);
         $this->htmlFooter();
     }
 
@@ -633,22 +645,23 @@ class WosController extends Controller {
             case 'curl':
                 print "#!/bin/bash\n".
                     "# Script to add all users\n".
+                    "BASE_URL='".rtrim(_env('APP_URL'),'/')."'\n".
                     "DIGEST_AUTH='username:password'\n".
                     "if [ \"\${DIGEST_AUTH}\" == \"username:password\" ]; then\n".
                     "    echo 'Please edit this file and update with your credentials'\n".
                     "    exit 1\n".
                     "fi\n\n";
-                        $curlAuth = '--digest -u "${DIGEST_AUTH}"';
-                        $curlUrl = rtrim(_env('APP_URL'),'/');
-                        $n = 1;
-                        foreach ($allPlayers as $p) {
-                            printf("curl -s %s/add/%d %s | grep -e '^<p>'\n",
-                                $curlUrl, $p['id'], $curlAuth);
-                            if ( $n++ % 29 == 0) {
-                                print "sleep 61\n";
-                            }
-                        }
-                        break;
+                $curlAuth = '--digest -u "${DIGEST_AUTH}"';
+                $curlUrl = '${BASE_URL}';
+                $n = 1;
+                foreach ($allPlayers as $p) {
+                    printf("curl -s \"%s/add/%d\" %s | grep -e '^<p>'\n",
+                        $curlUrl, $p['id'], $curlAuth);
+                    if ( $n++ % 29 == 0) {
+                        print "sleep 61\n";
+                    }
+                }
+                break;
             default:
                 break;
         }
@@ -676,7 +689,7 @@ class WosController extends Controller {
         $this->p('</ul>');
 
         $this->p("There are $numUsers admin users:",'h4',true);
-        $cmd = sprintf('awk -F: \'{if ($2=="%s") {print "<li>"$1"</li>"}}\' %s',
+        $cmd = sprintf('awk -F: \'{if ($2=="%s") {print "<li> &nbsp; <b>"$1"</b></li>"}}\' %s',
                         self::DIGEST_REALM, _env('APACHE_DIGEST') );
         $this->p($this->execCmd($cmd),'ol',true);
         $this->htmlFooter();
@@ -889,7 +902,7 @@ class WosController extends Controller {
                 return $int_id;
             }
         }
-        $this->pExit('Invalid ID '.$player_id,400);
+        $this->pExit('PlayerID failed validation: '.$player_id,400);
     }
     private function validateGiftCode($giftCode) {
         $giftCode = trim($giftCode);
@@ -1345,16 +1358,15 @@ Body3:
             $this->p(__CLASS__.': dbg='.($this->dbg?1:0).' guzEmulate='.($this->guzEmulate?1:0),'pre',true);
         }
 
-        $this->p('<table><tr >');
+        $this->p('<table><tr>');
         $this->p('<a href="/">Home</a>','td');
-        $this->p('| <a href="/alliances">Alliances</a>','td');
-        $this->p('| <a href="/players">Players</a>','td');
-        $this->p('|','td');
-        $this->p($this->menuForm('Add','player ID'),'td');
-        $this->p('|','td');
-        $this->p($this->menuForm('Remove','player ID'),'td');
-        $this->p('|','td');
-        $this->p($this->menuForm('Send','gift code','Send Giftcode'),'td');
+        $this->p('<b>|</b> <a href="/alliances">Alliances</a>','td');
+        $this->p('<b>|</b> <a href="/players">Players</a>','td');
+        $this->p('<b>|</b> <a href="/download">Download</a>','td');
+        $this->p('<td width="5">&nbsp;</td>');
+        $this->p($this->menuForm('Add','player ID','','['.self::OUR_ALLIANCE.'] '),'td');
+        $this->p($this->menuForm('Remove','player ID','',' <b>||</b> '),'td');
+        $this->p($this->menuForm('Send','gift code','Send Giftcode',' <b>||</b> '),'td');
         $this->p('</tr></table>');
         if ($title) {
             $this->p($title,'h3');
@@ -1363,22 +1375,29 @@ Body3:
     private function htmlFooter() {
         $this->p('</body></html>');
     }
-    private function menuForm($action,$placeHolder='',$buttonName='') {
+    private function menuForm($action,$placeHolder,$buttonName='',$label='') {
         $lAction = strtolower($action);
         if (empty($buttonName)) {
             $buttonName = $action;
         }
         $idField = $lAction.'Id';
         if ( ! empty($placeHolder) ) {
-            $placeHolder = ' placeholder="'.$placeHolder.'"';
+            $placeHolder = sprintf(' placeholder="%s"', $placeHolder);
         }
-        return "<form onsubmit=\"return formConfirm('$lAction','$idField');\">".
-                "<input type=\"text\" id=\"$idField\" name=\"$idField\" size=\"10\"".
-                $placeHolder."><button value=\"$action\">$buttonName</button>".
-                '</form>';
+        if ( ! empty($label) ) {
+            $label = sprintf('<label for="%s">%s</label>', $idField, $label);
+        }
+        return sprintf('<form onsubmit="return formConfirm(\'%s\',\'%s\');">%s'.
+                    '<input type="text" id="%s" name="%s" size="10"%s>'.
+                    '<button value="%s">%s</button>'.
+                    '</form>',
+                    $lAction, $idField, $label,
+                    $idField, $idField, $placeHolder,
+                    $action, $buttonName
+                );
     }
     private function allianceForm($action,$data=[]) {
-        $aFields = [
+        static $aFields = [
             'short_name' => ['3-letter Name', 7  ],
             'long_name'  => ['Long Name',     15 ],
             'comment'    => ['Comment',       30 ]
@@ -1428,7 +1447,7 @@ Body3:
         $this->log->info( "$myPid) ".str_replace("\n"," ",trim(strip_tags($msg))) );
     }
 
-    public function build_sorter($key, $dir) {
+    public function buildSorter($key, $dir) {
         // Handle asc vs. desc order with multiplier
         $multiplier = ($dir=='asc' ? 1 : -1);
         $key2 = 'player_name';
