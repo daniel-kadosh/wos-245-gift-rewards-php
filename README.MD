@@ -54,7 +54,8 @@ Run without parameters to get usage details.
 Runtime files:
 * `wos245/gift-rewards.db` SQLite3 database file
 * `wos245/apache-auth` Apache digest auth user file
-* `wos245/valhalla245.duckdns.org/*` SSL certificates
+* `wos245/valhalla245.duckdns.org/*` SSL certificates, installed manually
+* `wos245/wos_controller_*.log` App log file
 
 NOTE: this Git project's entire directory structure is mounted in the docker image as `/var/www`,
 and file changes in the host OS immediately take effect under the running container.
