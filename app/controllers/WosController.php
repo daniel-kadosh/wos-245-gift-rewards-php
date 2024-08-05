@@ -269,7 +269,7 @@ class WosController extends Controller {
         $leftCols = count(self::LIST_COLUMNS) - $xCols + 1;
         $this->p('<table><tr><td colspan="'.$leftCols.'"></td>'.
                     '<td style="text-align: center; border-bottom: 1px solid;" colspan="'.$xCols.'">'.
-                    '(fields to manage manually)</td><td></td></tr>'
+                    'Fields to manage manually</td><td></td></tr>'
             );
         $this->p('<tr><th width="30">#</th>');
         foreach (self::LIST_COLUMNS as $colName => $dbField) {
@@ -619,18 +619,28 @@ class WosController extends Controller {
                         $formats[$fileFormat]['ext']
                     )
             ])->sendHeaders();
+        // Assemble player array
         $allPlayers = db()
             ->select('players')
             ->orderBy('id','asc')
             ->all();
 
+        $pe = new playerExtra('',true);
+        foreach ($allPlayers as $key => $p) {
+            $pe->parseJsonExtra($p['extra']);
+            unset($p['extra']);
+            $allPlayers[$key] = array_merge($p,$pe->getArray(true));
+        }
+
         // PHP to handle output buffering
         ob_start();
         switch ($format) {
             case 'json':
+                print "[\n";
                 foreach ($allPlayers as $p) {
-                    print json_encode($p)."\n";
+                    print json_encode($p,JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_IGNORE).",\n";
                 }
+                print "]\n";
                 break;
             case 'csv':
                 $stdout = fopen('php://output', 'w');
@@ -1568,11 +1578,11 @@ class playerExtra {
      */
     public function getArray($includeHidden=false) {
         $a = [];
-        foreach (array_keys($this->fields) as $field) {
-            $a[$field] = $this->$field;
-        }
         if ($includeHidden) {
             $a['alliance_name'] = $this->alliances[ intval($this->alliance_id) ];
+        }
+        foreach (array_keys($this->fields) as $field) {
+            $a[$field] = $this->$field;
         }
         return $a;
     }
