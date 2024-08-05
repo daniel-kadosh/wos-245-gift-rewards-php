@@ -1553,6 +1553,9 @@ class playerExtra {
      */
     public function parseJsonExtra($extra) {
         if (empty($extra)) {
+            foreach ($this->fields as $field => $type) {
+                $this->$field = ($type==self::F_STRING ? '' : 0);
+            }
             return;
         }
         try {
