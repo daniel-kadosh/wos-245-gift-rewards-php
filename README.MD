@@ -51,10 +51,13 @@ Run without parameters to get usage details.
 * `docker/000-default.conf` Defines the apache vhost config
 * `docker/php.ini` Has extra PHP configs for both CLI and under Apache
 
-Runtime files:
-* `wos245/gift-rewards.db` SQLite3 database file
-* `wos245/apache-auth` Apache digest auth user file
+Runtime files you need to create:
+* `wos245/apache-auth` Apache digest auth user file. Use `wosh.sh -u USERNAME` to create at least 1 user,
+then you can manage using the "hidden" `/admin` menu from your web browser.
 * `wos245/valhalla245.duckdns.org/*` SSL certificates, installed manually
+
+Runtime files created automatically
+* `wos245/gift-rewards.db` SQLite3 database file
 * `wos245/wos_controller_*.log` App log file
 
 NOTE: this Git project's entire directory structure is mounted in the docker image as `/var/www`,
@@ -71,6 +74,8 @@ Normal startup with `wos.sh -a` will run all DB migration scripts under
 
 ## Deployment instructions
 Run `wos.sh -a -p` to start with production environment, or `wos.sh -a -d` for dev/debug environment.
+If container doesn't seem to respond after starting in production mode, either look for docker's log files
+or start it in dev mode where it runs in the foreground and you can see exactly how things are starting up.
 
 By default, digest auth is enabled in Apache and to create user(s) use `wosh.sh -u USERNAME`
 
