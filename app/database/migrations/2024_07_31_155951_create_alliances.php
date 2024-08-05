@@ -44,7 +44,7 @@ class CreateAlliances extends Database
                 $table->longText('comment')->nullable();
             });
         }
-        if (!static::$capsule::schema()->hasColumn("players","alliance_id")) {
+        if (!static::$capsule::schema()->hasColumn("players","extra")) {
             static::$capsule::schema()->table("players", function (Blueprint $table) {
                 $table->longText('extra')->nullable();
             });
