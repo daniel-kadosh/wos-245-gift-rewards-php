@@ -296,8 +296,12 @@ class WosController extends Controller {
                 $pe->parseJsonExtra($p['extra']);
                 $allPlayers[$key] = array_merge($p,$pe->getArray(true));
             }
-            if ( substr($sort,0,2) == 'x:' ) {  // Re-sort with key from extra field
-                usort($allPlayers, $this->buildSorter( substr($sort,2), $dir ));
+            if ( array_search($sort,['id','player_name'],true) === false ) {
+                // Sort with player_name as 2nd key, ascending
+                if ( substr($sort,0,2)=='x:' ) {
+                    $sort = substr($sort,2);
+                }
+                usort($allPlayers, $this->buildSorter( $sort, $dir ));
             }
 
             // Display
@@ -1460,9 +1464,12 @@ Body3:
     public function buildSorter($key, $dir) {
         // Handle asc vs. desc order with multiplier
         $multiplier = ($dir=='asc' ? 1 : -1);
-        $key2 = 'player_name';
-        return function ($a, $b) use ($key,$key2,$multiplier) {
-            return strcmp($a[$key].strtolower($a[$key2]), $b[$key].strtolower($b[$key2])) * $multiplier;
+        return function ($a, $b) use ($key,$multiplier) {
+            $ret = strnatcmp($a[$key], $b[$key]) * $multiplier;
+            // 2nd sort key: player_name ASC
+            return $ret==0 ?
+                        strcmp(strtolower($a['player_name']), strtolower($b['player_name']))
+                        : $ret;
         };
     }
 }
@@ -1552,10 +1559,11 @@ class playerExtra {
      * @param string $extra     JSON string stored in 'extra' DB column
      */
     public function parseJsonExtra($extra) {
+        // First reset everything to defaults
+        foreach ($this->fields as $field => $type) {
+            $this->$field = ($type==self::F_STRING ? '' : 0);
+        }
         if (empty($extra)) {
-            foreach ($this->fields as $field => $type) {
-                $this->$field = ($type==self::F_STRING ? '' : 0);
-            }
             return;
         }
         try {
