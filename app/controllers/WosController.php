@@ -81,7 +81,7 @@ class WosController extends Controller {
         $this->p(sprintf($lineFormat,'remove/','remove/','[playerID]',
             'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
         $this->p(sprintf($lineFormat,'download','download/','[format]',
-            'Download player DB','Supported formats: <b>csv</b>, <b>json</b>, <b>curl</b> (bash script to re-add users)'),'tr');
+            'Download player DB','Supported formats: <b>csv</b>, <b>json</b>, <b>curl</b> (bash script to re-add users), <b>sqlite3</b>'),'tr');
 
         $this->p('<td colspan="2">&nbsp;</td>','tr'); // empty row
 
@@ -587,9 +587,10 @@ class WosController extends Controller {
      */
     public function download($fileFormat = '') {
         $formats = [
-            'csv'   => ['ct' => 'text/csv',         'ext' => 'csv' ],
-            'json'  => ['ct' => 'application/json', 'ext' => 'json'],
-            'curl'  => ['ct' => 'text/plain',       'ext' => 'sh'  ]
+            'csv'     => ['ct' => 'text/csv',                 'ext' => 'csv' ],
+            'json'    => ['ct' => 'application/json',         'ext' => 'json'],
+            'curl'    => ['ct' => 'text/plain',               'ext' => 'sh'  ],
+            'sqlite3' => ['ct' => 'application/vnd.sqlite3',  'ext' => 'db'  ]
         ];
         $format = trim(strtolower($fileFormat));
 
@@ -609,6 +610,8 @@ class WosController extends Controller {
                 'File with each line as 1 row of the database as a JSON string'),'tr');
             $this->p(sprintf($lineFormat,'curl','curl',
                 'Bash script with curl calls to add players into the database (DB backup of sorts)'),'tr');
+            $this->p(sprintf($lineFormat,'sqlite3','sqlite3',
+                'Full Sqlite3 database backup'),'tr');
             $this->p('</table>');
             $this->htmlFooter();
             return;
@@ -623,17 +626,20 @@ class WosController extends Controller {
                         $formats[$fileFormat]['ext']
                     )
             ])->sendHeaders();
-        // Assemble player array
-        $allPlayers = db()
-            ->select('players')
-            ->orderBy('id','asc')
-            ->all();
 
-        $pe = new playerExtra('',true);
-        foreach ($allPlayers as $key => $p) {
-            $pe->parseJsonExtra($p['extra']);
-            unset($p['extra']);
-            $allPlayers[$key] = array_merge($p,$pe->getArray(true));
+        if ( $format != 'sqlite3' ) {
+            // Assemble player array
+            $allPlayers = db()
+                ->select('players')
+                ->orderBy('id','asc')
+                ->all();
+
+            $pe = new playerExtra('',true);
+            foreach ($allPlayers as $key => $p) {
+                $pe->parseJsonExtra($p['extra']);
+                unset($p['extra']);
+                $allPlayers[$key] = array_merge($p,$pe->getArray(true));
+            }
         }
 
         // PHP to handle output buffering
@@ -675,6 +681,9 @@ class WosController extends Controller {
                         print "sleep 61\n";
                     }
                 }
+                break;
+            case 'sqlite3':
+                readfile( _env('DB_DATABASE') );
                 break;
             default:
                 break;
