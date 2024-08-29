@@ -21,7 +21,8 @@ class WosController extends Controller {
             'Last Message'      => 'last_message',
             'Last Update UTC'   => 'updated_at',
             'Alliance'          => 'x:alliance_name',
-            'Comment'           => 'x:comment'
+            'Comment'           => 'x:comment',
+            'Ignore'            => 'x:ignore'
         ];
     const ALLIANCE_COLUMNS = [
             'ID'            => 'id',
@@ -250,6 +251,7 @@ class WosController extends Controller {
         // Validation
         $sort = strtolower(request()->params('sort','player_name'));
         $dir  = strtolower(request()->params('dir' ,'asc'));
+        $showIgnored = intval(request()->params('show_ignored',0));
         if ( array_search($sort,self::LIST_COLUMNS,true) === false ) {
             $this->p(" (Ignored invalid sort column $sort)");
             $sort = 'player_name';
@@ -258,6 +260,18 @@ class WosController extends Controller {
             $this->p(" (Ignored invalid sort direction $dir)");
             $dir = 'asc';
         }
+        if ($showIgnored != 0) {
+            $showIgnored = 1;
+        }
+
+        // Compose link to show or not the ignored players
+        $urlParams = request()->params();
+        unset ($urlParams[0]);
+        $urlParams['show_ignored'] = 1 - $showIgnored;
+        $this->p(sprintf('<a href="/players?%s">[%s ignored players]</a> (ignored = won\'t get gift code)',
+                            http_build_query($urlParams),
+                            $showIgnored ? 'Hide' : 'SHOW'
+                        ));
 
         // Assemble headers for table
         $xCols = 0;
@@ -272,14 +286,16 @@ class WosController extends Controller {
                     'Fields to manage manually</td><td></td></tr>'
             );
         $this->p('<tr><th width="30">#</th>');
+        $showIgnoredURL = ($showIgnored ? '&show_ignored=1' : '');
         foreach (self::LIST_COLUMNS as $colName => $dbField) {
             $newDir = 'asc';
             if ( $sort == $dbField ) {
                 $newDir = ($dir=='asc' ? 'desc' : 'asc');
             }
-            $this->p( sprintf('<a href="/players?sort=%s&dir=%s">%s</a>',
+            $this->p( sprintf('<a href="/players?sort=%s&dir=%s%s">%s</a>',
                                 $dbField,
                                 $newDir,
+                                $showIgnoredURL,
                                 $colName), 'th');
         }
         $this->p('<th>Actions</th></tr>');
@@ -288,31 +304,36 @@ class WosController extends Controller {
             // Assemble players array
             $dbSort = substr($sort,0,2) == 'x:' ? 'player_name' : $sort;
             $allPlayers = db()
-                ->select('players')
-                ->orderBy("$dbSort COLLATE NOCASE",$dir)
+                ->select('players');
+            if ( ! $showIgnored ) {
+                $allPlayers = $allPlayers
+                    ->where('extra', 'not like', '%ignore":1%');
+            }
+            $allPlayers = $allPlayers
+                #->orderBy("$dbSort COLLATE NOCASE",$dir)
                 ->all();
             $pe = new playerExtra('',true);
             foreach ($allPlayers as $key => $p) {
                 $pe->parseJsonExtra($p['extra']);
                 $allPlayers[$key] = array_merge($p,$pe->getArray(true));
             }
-            if ( array_search($sort,['id','player_name'],true) === false ) {
-                // Sort with player_name as 2nd key, ascending
-                if ( substr($sort,0,2)=='x:' ) {
-                    $sort = substr($sort,2);
-                }
-                usort($allPlayers, $this->buildSorter( $sort, $dir ));
+            // Sort with custom order
+            if ( substr($sort,0,2)=='x:' ) {
+                $sort = substr($sort,2);
             }
+            usort($allPlayers, $this->buildSorter( $sort, $dir ));
 
             // Display
             $n = 1;
             $actionFormat = '<input onclick="return removeConfirm(\'/%s\')" '.
                                 'type="submit" value="%s" formmethod="get"/>';
             foreach ($allPlayers as $p) {
+                #$this->pDebug('player',$p); break;
                 $pe->parseJsonExtra($p['extra']);
                 $this->p('<tr><form action="/update/'.$p['id'].'" method="post">');
                 $this->p($n++.']','td');
                 foreach ( self::LIST_COLUMNS as $col ) {
+                    $xcol = substr($col,2);
                     switch ($col) {
                         case 'player_name' :
                             $this->p('<img src="'.$p['avatar_image'].'" width="20"> <b>'.
@@ -325,10 +346,10 @@ class WosController extends Controller {
                                     ), 'td');
                             break;
                         case 'x:alliance_name':
-                            $this->p($pe->getHtmlForm('alliance_id'),'td');
-                            break;
+                            $xcol = 'alliance_id';
                         case 'x:comment':
-                            $this->p($pe->getHtmlForm('comment'),'td');
+                        case 'x:ignore':
+                            $this->p($pe->getHtmlForm($xcol),'td');
                             break;
                         case 'id' :
                         case 'last_message' :
@@ -374,6 +395,7 @@ class WosController extends Controller {
             $allPlayers = db()
                 ->select('players')
                 ->where('last_message', 'not like', $giftCode.': %')
+                ->where('extra', 'not like', '%ignore":1%')
                 ->orderBy('id','asc')
                 ->all();
             $numPlayers = count($allPlayers);
@@ -529,6 +551,13 @@ class WosController extends Controller {
             $params = request()->body(true);
             if ( empty($params) ) {
                 $this->pExit('<b>ERROR:</b> no data to update',400);
+            }
+            if ( isset($params['ignore']) ) {
+                $i = strtolower(trim($params['ignore']));
+                if ( is_int($i) ) {
+                    $i = ($i!=0 ? 1 : 0);
+                }
+                $params['ignore'] = ($i=='on' ? 1 : $i);
             }
             $pe = new playerExtra( json_encode($params, JSON_UNESCAPED_UNICODE) );
             $data = [
@@ -1020,9 +1049,12 @@ class WosController extends Controller {
         }
         $sd = $signInResponse['data'];
         $signInResponse['playerGood'] = true;
-        if ($sd->kid!=self::OUR_STATE || $signInResponse['err_code'] == 40004) {
+        $stateID = isset($sd->kid) ? $sd->kid : -1;
+        if ($signInResponse['err_code'] == 40004 || $stateID !=self::OUR_STATE ) {
             // 40004 = Player doesn't exist
-            $this->p('DELETING player: invalid user or state (#'.$sd->kid.')</p>',0,true);
+            $this->p(sprintf('DELETING player: invalid %s</p>',
+                            $stateID==-1 ? 'WOS user' : 'state (#'.$stateID.')'
+                        ),0,true);
             if ( $this->deleteById('players',$p['id']) == -1 ) {
                 // Exception thrown during delete, so let's just stop
                 return null;
@@ -1474,6 +1506,11 @@ Body3:
         // Handle asc vs. desc order with multiplier
         $multiplier = ($dir=='asc' ? 1 : -1);
         return function ($a, $b) use ($key,$multiplier) {
+            // 0-level key: 'ignore ASC'
+            if ($key!='ignore') {
+                $ret = strcmp($a['ignore'],$b['ignore']);
+                if ($ret!=0) { return $ret; }
+            }
             $ret = strnatcmp($a[$key], $b[$key]) * $multiplier;
             // 2nd sort key: player_name ASC
             return $ret==0 ?
@@ -1486,6 +1523,7 @@ Body3:
 class playerExtra {
     public $alliance_id = 0;
     public $comment     = '';
+    public $ignore      = 0;
     #public $rank        = 0;
     #public $power;
 
@@ -1493,11 +1531,13 @@ class playerExtra {
     const F_INT      = 2;
     const F_RANK     = 3; // numbers 1-5
     const F_ALLIANCE = 4; // "join" with alliance_id from database
+    const F_BOOLEAN  = 6;
 
     private $log;
     private $fields = [
         'alliance_id'   => self::F_ALLIANCE,
         'comment'       => self::F_STRING,
+        'ignore'        => self::F_BOOLEAN
         #'rank'          => self::F_RANK
         #'power'         => self::F_INT
     ];
@@ -1528,7 +1568,6 @@ class playerExtra {
             $this->ranks[$i] = "R$i";
         }
         */
-        #$this->log->info(print_r($this->alliances,true));
     }
 
     /**
@@ -1549,6 +1588,9 @@ class playerExtra {
             case self::F_STRING:
                 return sprintf('<input type="text" id="%s" name="%s" size="%d" value="%s">',
                             $field,$field,($field=='comment' ? 30 : 10),$this->$field);
+            case self::F_BOOLEAN:
+                return sprintf('<input type="checkbox" id="%s" name="%s" %s/>',
+                            $field,$field,($this->$field ? 'checked ' : ''));
             default:
                 return "Unknown field type $type for field $field";
         }
