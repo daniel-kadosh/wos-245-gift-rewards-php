@@ -276,7 +276,6 @@ class WosController extends Controller {
         }
         $this->p('<b>Filters:</b>','td');
         $pe = new playerExtra('',true);
-        $filterURLParams = '';
         $filters = [];
         foreach (array_keys(self::FILTER_NAMES) as $col) {
             $val = isset($urlParams[$col]) ? intval($urlParams[$col]) : -1;
@@ -1406,14 +1405,15 @@ Body3:
 
     ///////////////////////// View functions
     private function htmlHeader($title=null) {
-        $this->p('<html><head><style>');
-        $this->p('th, td { padding: 2px; text-align: left; vertical-align: middle; }');
-        $this->p('a { font-weight: bold; }');
-        $this->p('th { text-decoration: underline; }');
-        $this->p('button { background-color: #ADD8E6; font-weight: bold; }');
-        $this->p('</style>');
-        $this->p('<script type="text/javascript">');
+        $this->p('<html><head>');
+        $this->p('<meta name="robots" content="noindex,nofollow" />');
         $this->p("
+            th, td { padding: 2px; text-align: left; vertical-align: middle; }
+            a { font-weight: bold; }');
+            th { text-decoration: underline; }');
+            button { background-color: #ADD8E6; font-weight: bold; }');\n",
+            'style');
+        $this->p("<script type=\"text/javascript\">
             function removeConfirm(url) {
                 if (confirm(`\${url} Are you sure?`)) {
                     location.href = url;
@@ -1432,10 +1432,8 @@ Body3:
             }
             function gotoURL(url) {
                 location.href = url;
-            }
-            ");
+            }");
         $this->p('</script>');
-        $this->p('<meta name="robots" content="noindex,nofollow" />');
         $this->p('</head><body style="background-color:#D3D3D3;">');
         $this->p("WOS #245 Gift Rewards",'h1');
         if ( $this->dbg || $this->guzEmulate ) {
