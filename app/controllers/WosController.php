@@ -30,6 +30,10 @@ class WosController extends Controller {
             'Long Name'     => 'long_name',
             'Comment'       => 'comment'
         ];
+    const FILTER_NAMES = [
+            'alliance_id'   => 'Alliance',
+            'ignore'        => 'Ignore'
+        ];
 
     private $time = null;   // tick() DateTime object
     private $guz;           // Guzzle HTTP client object
@@ -251,7 +255,6 @@ class WosController extends Controller {
         // Validation
         $sort = strtolower(request()->params('sort','player_name'));
         $dir  = strtolower(request()->params('dir' ,'asc'));
-        $showIgnored = intval(request()->params('show_ignored',0));
         if ( array_search($sort,self::LIST_COLUMNS,true) === false ) {
             $this->p(" (Ignored invalid sort column $sort)");
             $sort = 'player_name';
@@ -260,18 +263,42 @@ class WosController extends Controller {
             $this->p(" (Ignored invalid sort direction $dir)");
             $dir = 'asc';
         }
-        if ($showIgnored != 0) {
-            $showIgnored = 1;
-        }
 
-        // Compose link to show or not the ignored players
+        // Filters for list
         $urlParams = request()->params();
         unset ($urlParams[0]);
-        $urlParams['show_ignored'] = 1 - $showIgnored;
-        $this->p(sprintf('<a href="/players?%s">[%s ignored players]</a> (ignored = won\'t get gift code)',
-                            http_build_query($urlParams),
-                            $showIgnored ? 'Hide' : 'SHOW'
-                        ));
+        $sortParams = array_intersect_key($urlParams,['sort'=>0,'dir'=>1]);
+        $this->p('<table><tr><form>');
+        foreach ($sortParams as $key => $val) {
+            // Couldn't find a cleaner way to pass existing sort options in URL
+            $this->p(sprintf('<input type="hidden" name="%s" value="%s">',
+                            $key, $val ) );
+        }
+        $this->p('<b>Filters:</b>','td');
+        $pe = new playerExtra('',true);
+        $filterURLParams = '';
+        $filters = [];
+        foreach (array_keys(self::FILTER_NAMES) as $col) {
+            $val = isset($urlParams[$col]) ? intval($urlParams[$col]) : -1;
+            if ($val != -1) {
+                if ($col == 'ignore') {
+                    $val = ($val!=0 ? 1 : 0);
+                }
+                $filters[$col] = $val;
+            }
+            $pe->$col = $val;
+            $this->p( sprintf(' %s=%s ',
+                                self::FILTER_NAMES[$col],
+                                $pe->getHtmlForm($col,true)
+                            ), 'td');
+        }
+        $this->p('<input type="submit" value="Apply">','td');
+        $this->p('</form>');
+        $this->p(sprintf('<input type="submit" value="Reset" formmethod="get"'.
+                            ' onclick="return gotoURL(\'/players%s\')" />',
+                            count($sortParams) ? '?'.http_build_query($sortParams) : ''
+                        ),'td');
+        $this->p('</tr></table>');
 
         // Assemble headers for table
         $xCols = 0;
@@ -286,7 +313,6 @@ class WosController extends Controller {
                     'Fields to manage manually</td><td></td></tr>'
             );
         $this->p('<tr><th width="30">#</th>');
-        $showIgnoredURL = ($showIgnored ? '&show_ignored=1' : '');
         foreach (self::LIST_COLUMNS as $colName => $dbField) {
             $newDir = 'asc';
             if ( $sort == $dbField ) {
@@ -295,26 +321,26 @@ class WosController extends Controller {
             $this->p( sprintf('<a href="/players?sort=%s&dir=%s%s">%s</a>',
                                 $dbField,
                                 $newDir,
-                                $showIgnoredURL,
-                                $colName), 'th');
+                                count($filters) ? '&'.http_build_query($filters) : '',
+                                $colName), 'td');
         }
         $this->p('<th>Actions</th></tr>');
 
         try {
             // Assemble players array
-            $dbSort = substr($sort,0,2) == 'x:' ? 'player_name' : $sort;
+            #$dbSort = substr($sort,0,2) == 'x:' ? 'player_name' : $sort;
             $allPlayers = db()
-                ->select('players');
-            if ( ! $showIgnored ) {
-                $allPlayers = $allPlayers
-                    ->where('extra', 'not like', '%ignore":1%');
-            }
-            $allPlayers = $allPlayers
+                ->select('players')
                 #->orderBy("$dbSort COLLATE NOCASE",$dir)
                 ->all();
-            $pe = new playerExtra('',true);
             foreach ($allPlayers as $key => $p) {
                 $pe->parseJsonExtra($p['extra']);
+                foreach ($filters as $col => $val) {
+                    if ($pe->$col != $val) {
+                        unset($allPlayers[$key]);
+                        continue 2;
+                    }
+                }
                 $allPlayers[$key] = array_merge($p,$pe->getArray(true));
             }
             // Sort with custom order
@@ -559,7 +585,7 @@ class WosController extends Controller {
                 }
                 $params['ignore'] = ($i=='on' ? 1 : $i);
             }
-            $pe = new playerExtra( json_encode($params, JSON_UNESCAPED_UNICODE) );
+            $pe = new playerExtra( json_encode($params, JSON_UNESCAPED_UNICODE), true );
             $data = [
                 'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
                 'extra'         => $pe->getJson()
@@ -576,7 +602,7 @@ class WosController extends Controller {
                 $this->p('Updated: <b>'.$playerData['player_name'].'</b>','p',true);
                 unset($playerData['extra']);
                 $playerData['updated_at'] = $data['updated_at'];
-                $data = array_merge($playerData,$pe->getArray());
+                $data = array_merge($playerData,$pe->getArray(true));
                 $this->pDebug('Details',$data);
             } else {
                 $this->pExit('No rows updated for <b>'.$playerData['player_name'].'</b>',500);
@@ -1404,6 +1430,9 @@ Body3:
                 removeConfirm(url);
                 return false;
             }
+            function gotoURL(url) {
+                location.href = url;
+            }
             ");
         $this->p('</script>');
         $this->p('<meta name="robots" content="noindex,nofollow" />');
@@ -1506,11 +1535,6 @@ Body3:
         // Handle asc vs. desc order with multiplier
         $multiplier = ($dir=='asc' ? 1 : -1);
         return function ($a, $b) use ($key,$multiplier) {
-            // 0-level key: 'ignore ASC'
-            if ($key!='ignore') {
-                $ret = strcmp($a['ignore'],$b['ignore']);
-                if ($ret!=0) { return $ret; }
-            }
             $ret = strnatcmp($a[$key], $b[$key]) * $multiplier;
             // 2nd sort key: player_name ASC
             return $ret==0 ?
@@ -1573,11 +1597,13 @@ class playerExtra {
     /**
      * Returns the HTML of a form field to display current value + input
      */
-    public function getHtmlForm($field) {
+    public function getHtmlForm($field,$isFilter=false) {
         $type = ! isset($this->fields[$field]) ? self::F_STRING : $this->fields[$field];
         switch ($type) {
             case self::F_ALLIANCE:
-                $options = &$this->alliances;
+                $options = $isFilter ?
+                    [-1 => 'all'] + $this->alliances :
+                    $this->alliances;
                 break;
             case self::F_RANK:
                 $options = &$this->ranks;
@@ -1589,13 +1615,18 @@ class playerExtra {
                 return sprintf('<input type="text" id="%s" name="%s" size="%d" value="%s">',
                             $field,$field,($field=='comment' ? 30 : 10),$this->$field);
             case self::F_BOOLEAN:
-                return sprintf('<input type="checkbox" id="%s" name="%s" %s/>',
+                if (!$isFilter) {
+                    return sprintf('<input type="checkbox" id="%s" name="%s" %s/>',
                             $field,$field,($this->$field ? 'checked ' : ''));
+                }
+                $options = [-1 => 'all', 0 => 'false', 1=> 'true'];
+                break;
             default:
                 return "Unknown field type $type for field $field";
         }
         // Drop-down selection:
-        $ret = "<select name=\"$field\" id=\"$field\">";
+        $ret = sprintf('<select name="%s" id="%s%s">',
+            $field, ($isFilter ? 'f:' : ''), $field );
         $targetId = (isset($options[$this->$field]) ? $this->$field : 0);
         foreach ($options as $id => $name) {
             $ret .= sprintf( '<option value="%d"%s>%s</option>',
