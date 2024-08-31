@@ -6,7 +6,7 @@ WOS-245 Gift Rewards & User database (PHP version)
 Application is based on this work:
 https://github.com/Nico31300/wos-245-gift-rewards
 
-Crude website/API to send Whiteout Survival gift codes to members of an alliance in State #245.
+Website/API to send Whiteout Survival gift codes to members of an alliance in State #245.
 Main index page has links to list and manage player IDs.
 Has a "hidden" menu (/admin URL) to help manage Apache digest auth users
 
@@ -15,7 +15,7 @@ https://leafphp.dev/docs/introduction/
 
 ## Installation
 * Clone from Github: https://github.com/daniel-kadosh/wos-245-gift-rewards-php
-* Host OS: Install Docker, and optionally SQlite3
+* Host OS: Install Docker
 * Run `wos.sh -r` to build docker + application
 * Create login credentials for Apache:
 ** Run `wos.sh -a` to launch the container
@@ -37,8 +37,7 @@ Docker container:
 App details:
 * Framework: Leaf PHP microframework
 * Database: SQlite3, with Laravel's Eloquent DB imported with Leaf
-* HTTP requests: Guzzle https://docs.guzzlephp.org/en/stable/
-* XLS/CSV export: PHPSpreadsheet https://phpspreadsheet.readthedocs.io/en/latest/
+* HTTP request library: Guzzle https://docs.guzzlephp.org/en/stable/
 
 ## Configuration
 Docs from the Leaf PHP framework: https://leafphp.dev/docs/config/
@@ -49,7 +48,7 @@ Docs from the Leaf PHP framework: https://leafphp.dev/docs/config/
 Run without parameters to get usage details.
 * `docker/Dockerfile` For the container build, exposing Apache on port 80 and 443
 * `docker/000-default.conf` Defines the apache vhost config
-* `docker/php.ini` Has extra PHP configs for both CLI and under Apache
+* `docker/php.ini` Has extra PHP configs for both CLI and running under Apache
 
 Runtime files you need to create:
 * `wos245/apache-auth` Apache digest auth user file. Use `wosh.sh -u USERNAME` to create at least 1 user,
@@ -64,9 +63,10 @@ NOTE: this Git project's entire directory structure is mounted in the docker ima
 and file changes in the host OS immediately take effect under the running container.
 
 ## Database creation
-`wos.sh -r` will create an empty SQlite3 db automatically if it doesn't exist.
+`wos.sh -r` will create an empty SQlite3 db schema automatically if it doesn't exist.
 
-To empty the database, remove `wos245/gift-rewards.db` and re-start the application.
+To empty the database, remove `wos245/gift-rewards.db` and re-start the application with
+`wos.sh -a [-p|-d]`.
 
 ## Database initialization
 Normal startup with `wos.sh -a` will run all DB migration scripts under
