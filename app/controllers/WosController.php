@@ -35,14 +35,23 @@ class WosController extends Controller {
             'ignore'        => 'Ignore'
         ];
     const GIFTCODE_COLUMNS = [
-            'ID'            => 'id',
-            'Giftcode'      => 'code',
-            'Player Count'  => 'player_count',
-            'First Sent UTC'=> 'created_at',
-            'Last Sent UTC' => 'updated_at'
+            'ID'                => 'id',
+            'Giftcode'          => 'code',
+            'WebUser'           => 'usersSending',
+            'First Sent UTC'    => 'created_at',
+            'Succesful'         => 'succesful',
+            'Had Gift'          => 'alreadyReceived',
+            'Last Sent UTC'     => 'updated_at',
+            'Deleted Players'   => 'deletedPlayers',
+            'Expected'          => 'expected',
+            'hitRateLimit'      => 'hitRateLimit',
+            'networkError'      => 'networkError',
+            'signinErrorCodes'  => 'signinErrorCodes',
+            'giftErrorCodes'    => 'giftErrorCodes',
         ];
     private $time = null;   // tick() DateTime object
     private $guz;           // Guzzle HTTP client object
+    private $stats;         // giftCodeStatistics object
     private $log;           // Leaf logger
     private $dbg;           // boolean: true if APP_DEBUG for verbose logging
     private $guzEmulate;    // boolean: true if GUZZLE_EMULATE to not make WOS API calls
@@ -415,15 +424,27 @@ class WosController extends Controller {
         $this->p("Sending <b>$giftCode</b> to all players that haven't yet received it:",'p');
 
         // Create initial stub record for this giftcode
+        $this->stats = new giftcodeStatistics();
         try {
-            $t = $this->time->format('YYYY-MM-DD HH:mm:ss');
-            db()->query('INSERT INTO giftcodes(code,created_at,updated_at) '.
-                        'VALUES (?,?,?) ON CONFLICT(code) '.
-                        'DO UPDATE SET updated_at=?')
-                ->bind($giftCode, $t, $t, $t)
+            $gc = db()->select('giftcodes','statistics')
+                ->where(['code' => $giftCode])
+                ->first();
+            if ( !empty($gc) ) {
+                $this->stats->parseJsonStatistics($gc['statistics']);
+            }
+            if ($this->dbg) {
+                $this->pDebug('prevStats=',$gc);
+            }
+            $this->stats->increment('usersSending',$_SERVER['REMOTE_USER']);
+            $s = $this->stats->getJson();
+            $t = $this->getTimestring(true,false);
+            db()->query('INSERT INTO giftcodes(code,created_at,updated_at,statistics) '.
+                        'VALUES (?,?,?,?) ON CONFLICT(code) '.
+                        'DO UPDATE SET updated_at=?, statistics=?')
+                ->bind($giftCode, $t, $t, $s, $t, $s)
                 ->execute();
         } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR upserting giftcode:</b> '.$ex->getMessage(),'p',true);
+            $this->p('<b>DB WARNING upserting giftcode:</b> '.$ex->getMessage(),'p',true);
         }
 
         $httpReturnCode = 200;
@@ -439,6 +460,8 @@ class WosController extends Controller {
                 ->orderBy('id','asc')
                 ->all();
             $numPlayers = count($allPlayers);
+            $label = 'Try#'.count($this->stats->expected)+1;
+            $this->stats->expected[$label] = $numPlayers;
             if ($this->dbg) {
                 $this->p(__METHOD__." Found $numPlayers to process",'p',true);
             }
@@ -455,12 +478,18 @@ class WosController extends Controller {
                     break;
                 }
                 $n++;
+
+                // Debug use
+                if ($this->guzEmulate && $n>20) break;
+
                 $signInResponse = $this->verifyPlayerInWOS($p);
                 if ( $signInResponse == null ) {
                     // Do not continue process, API problem
+                    $this->updateGiftcodeStats($giftCode);
                     break;
                 } else if ( ! $signInResponse['playerGood'] ) {
                     // Invalid sign-in, ignore this player
+                    $this->updateGiftcodeStats($giftCode);
                     continue;
                 }
 
@@ -483,6 +512,7 @@ class WosController extends Controller {
                 // API ratelimit: assume if it hits 0 we have to wait 1 minute
                 $xrlr = $giftResponse['headers']['x-ratelimit-remaining'];
                 if ($xrlr < 2 && $n < $numPlayers) {
+                    $this->stats->hitRateLimit++;
                     $this->p("(gift x-ratelimit-remaining=$xrlr - pause $xrlrPauseTime sec) ",0,true);
                     // Proactively sleep here
                     if ( ! $this->guzEmulate && $n < $numPlayers) {
@@ -495,6 +525,9 @@ class WosController extends Controller {
             $httpReturnCode = 500;
         } catch (\Exception $ex) {
             $errMsg[] = __METHOD__.' <b>Exception:</b> '.$ex->getMessage();
+            if ($this->dbg) {
+                $this->pDebug('exception=',$ex);
+            }
             $httpReturnCode = 500;
         }
         if ( $this->badResponsesLeft<1 ) {
@@ -503,6 +536,7 @@ class WosController extends Controller {
         }
         $this->p("Processed $n players",'p',true);
         if ( $httpReturnCode>200 ) {
+            $this->updateGiftcodeStats($giftCode);
             if ( $httpReturnCode>404 ) {
                 $errMsg[] = 'Incomplete run!';
             }
@@ -530,7 +564,7 @@ class WosController extends Controller {
             }
 
             // Verify player exists and is in #245 thru WOS API
-            $response = $this->signIn($player_id);
+            $response = $this->signInWOS($player_id);
             if ($response['err_code'] == 40004) {
                 $this->pExit('<b>ERROR:</b> player ID does not exist in WOS, ignored.',404);
             } else if ($response['http-status'] >= 400) {
@@ -549,6 +583,7 @@ class WosController extends Controller {
                 ->where(['short_name'=>self::OUR_ALLIANCE])  // Default to VHL alliance
                 ->first();
             $pe->alliance_id = empty($aid) ? 0 : $aid['id'];
+            $t = $this->getTimestring(true,false);
             $playerData = [
                 'id'            => $player_id,
                 'player_name'   => $data->nickname,
@@ -556,8 +591,8 @@ class WosController extends Controller {
                 'avatar_image'  => $data->avatar_image,
                 'stove_lv'      => $data->stove_lv,
                 'stove_lv_content' => $data->stove_lv_content,
-                'created_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
-                'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
+                'created_at'    => $t,
+                'updated_at'    => $t,
                 'extra'         => $pe->getJson()
             ];
             $result = db()
@@ -604,7 +639,7 @@ class WosController extends Controller {
             }
             $pe = new playerExtra( json_encode($params, JSON_UNESCAPED_UNICODE), true );
             $data = [
-                'updated_at'    => $this->time->format('YYYY-MM-DD HH:mm:ss'),
+                'updated_at'    => $this->getTimestring(true,false),
                 'extra'         => $pe->getJson()
             ];
             $rowsUpdated = db()
@@ -662,7 +697,7 @@ class WosController extends Controller {
         $this->p('This is a summary of gift codes sent in the past','p');
         $this->p('<table><tr>');
         foreach (array_keys(self::GIFTCODE_COLUMNS) as $colName) {
-            $this->p($colName,'th');
+            $this->p("<u>$colName</u>",'th');
         }
         $this->p('</tr>');
         try {
@@ -670,22 +705,32 @@ class WosController extends Controller {
                 ->select('giftcodes')
                 ->orderBy('id','desc')
                 ->all();
+            $stats = new giftcodeStatistics();
             foreach ($allGiftcodes as $a) {
+                #$this->pDebug('json=',$a['statistics']);
+                $stats->parseJsonStatistics($a['statistics']);
+                unset($a['statistics']);
+                $a = array_merge($a, (array) $stats);
                 $this->p('<tr>');
                 foreach (self::GIFTCODE_COLUMNS as $col) {
                     $val = $a[$col];
-                    switch ($col) {
-                        case 'player_count':
+                    $type = is_array($val) ? 'array' : (is_numeric($val) ? 'num' : 'string');
+                    switch ($type) {
+                        case 'num':
                             $this->p('<td style="text-align: center;">'.$val.'</td>');
-                            continue 2;
-                        case 'code':
-                        case 'created_at':
-                            $val = "<b>$val</b>";
                             break;
+                        case 'string':
+                            $this->p("<b>$val</b>",'td');
+                            break;
+                        case 'array':
+                            $this->p('<td>');
+                            foreach ($val as $n => $v) {
+                                $this->p(sprintf("%s: %s<br/>",$v,$n));
+                            }
+                            $this->p('</td>');
                         default:
                             break;
                     }
-                    $this->p($val,'td');
                 }
                 $this->p('</tr>');
             }
@@ -1112,20 +1157,23 @@ class WosController extends Controller {
             sleep($sleepAmount);
             $sleepAmount = 0;
             $tries--;
-            $signInResponse = $this->signIn($p['id']);
+            $signInResponse = $this->signInWOS($p['id']);
             if ($this->dbg) {
                 $this->pDebug('signInResponse= ',$signInResponse);
             }
             if (empty($signInResponse['http-status'])) {
                 // Timeout or network error
+                $this->stats->networkError++;
                 $this->p('(Network error: '.$signInResponse['guzExceptionMessage'].') ',0,true);
                 $this->badResponsesLeft--;
                 sleep($this->guzEmulate ? 0 : 2);
             } else if ($signInResponse['http-status']==429) {
                 // Hit rate limit!
+                $this->stats->hitRateLimit++;
                 $sleepAmount = $this->guzEmulate ? 1 : 61;
                 $this->p("(Pausing $sleepAmount sec due to 429 signIn rate limit) ",0,true);
             } else if ($signInResponse['http-status'] >= 400) {
+                $this->stats->increment('signinErrorCodes','GuzException '.$signInResponse['guzExceptionMessage']);
                 $this->p(sprintf('<b>ABORT: WOS signIn API ERROR:</b> httpCode=%s Message=%s',
                     $signInResponse['http-status'], $signInResponse['guzExceptionMessage'] ) ,'p',true);
                 return null;
@@ -1136,6 +1184,8 @@ class WosController extends Controller {
             }
         }
         if ( ! $signInGood ) {
+            // Couldn't sign in above, but don't want to rush to remove
+            // player unless we have positive confirmation they don't exist.
             $this->p('<b>ABORT:</b> Failed to sign in player</p>',0,true);
             return null;
         }
@@ -1147,6 +1197,7 @@ class WosController extends Controller {
             $this->p(sprintf('DELETING player: invalid %s</p>',
                             $stateID==-1 ? 'WOS user' : 'state (#'.$stateID.')'
                         ),0,true);
+            $this->stats->deletedPlayers[ $p['id'] ] = $p['player_name'];
             if ( $this->deleteById('players',$p['id']) == -1 ) {
                 // Exception thrown during delete, so let's just stop
                 return null;
@@ -1184,12 +1235,13 @@ class WosController extends Controller {
             }
             $sleepAmount = 0;
             $tries--;
-            $giftResponse = $this->sendGiftCode($playerId,$giftCode);
+            $giftResponse = $this->sendGiftCodeWOS($playerId,$giftCode);
             if ($this->dbg) {
                 $this->pDebug('giftResponse= ',$giftResponse);
             }
             if (empty($giftResponse['http-status'])) {
                 // Timeout or network error
+                $this->stats->networkError++;
                 $giftResponse['msg'] = $giftResponse['guzExceptionMessage'];
                 $sleepAmount = $this->guzEmulate ? 0 : 2;
                 $this->p('(Network error: '.$giftResponse['msg']." - pause $sleepAmount sec.) ",0,true);
@@ -1200,18 +1252,20 @@ class WosController extends Controller {
             if ($giftErrCode == 40014) {
                 // Invalid gift code
                 $this->p('Aborting: Invalid gift code','b',true);
+                $this->stats->increment('giftErrorCodes','40014 Invalid gift code');
                 return null;
             }
             if ($giftErrCode == 40007) {
                 // Expired gift code
                 $this->p('Aborting: Gift code expired','b',true);
+                $this->stats->increment('giftErrorCodes','40007 Gift code expired');
                 return null;
             }
             $resetIn = 0;
             if ($giftErrCode == 40004) {
                 // Timeout retry
                 $resetIn = 3;
-                $msg = "Gift errCode=$giftErrCode";
+                $msg = "Gift errCode=$giftErrCode Timeout retry";
             } else if ($giftResponse['http-status']==429) {
                 // Too many requests
                 if ( !empty($giftResponse['headers']['x-ratelimit-reset']) ) {
@@ -1241,9 +1295,14 @@ class WosController extends Controller {
                         ,'pre',true);
                 //}
                 $msg = "http 429 Too many attempts";
+                $this->stats->hitRateLimit++;
             } else if ($giftResponse['http-status'] >= 400) {
                 $this->p('<b>WOS gift API ERROR:</b> '.$giftResponse['guzExceptionMessage'],'p',true);
+                $this->stats->increment('giftErrorCodes','GuzException '.$giftResponse['guzExceptionMessage']);
                 return null;
+            }
+            if ( !empty($msg) ) {
+                $this->stats->increment('giftErrorCodes',$msg);
             }
             if ( $resetIn > 0 ) {
                 $msg = "$msg: ".$giftResponse['msg']." - pausing $resetIn sec.";
@@ -1264,13 +1323,16 @@ class WosController extends Controller {
             case 20000:
                 $msg = "$giftCode: redeemed succesfully";
                 $sendGiftGood = true;
+                $this->stats->succesful++;
                 break;
             case 40008:
                 $msg = "$giftCode: already used";
                 $sendGiftGood = true;
+                $this->stats->alreadyReceived++;
                 break;
             default:
                 $msg = "$giftErrCode ".$giftResponse['msg'];
+                $this->stats->increment('giftErrorCodes',$msg);
                 break;
         }
         $this->p("$msg</p>",0,true);
@@ -1281,30 +1343,36 @@ class WosController extends Controller {
             ])
             ->where(['id' => $playerId])
             ->execute();
-        // Unless we know for sure we should continue to other players,
-        // let's abort here and not hit the API any more.
-        // We can add more retriable cases above as we find them.
+        $this->updateGiftcodeStats($giftCode);
+
         if ( ! $sendGiftGood ) {
+            // Unless we know for sure we should continue to other players,
+            // let's abort here and not hit the API any more.
+            // We can add more retriable cases above as we find them.
             $this->p('Cannot confirm we can continue, stopping now.','p',true);
             return null;
         }
+        return $giftResponse;
+    }
 
+    private function updateGiftcodeStats($code) {
         try {
             $rowsUpdated = db()
-                    ->query('UPDATE giftcodes'.
-                        ' SET player_count=player_count+1, updated_at=?'.
-                        ' WHERE code=?')
-                    ->bind($this->time->format('YYYY-MM-DD HH:mm:ss'), $giftCode)
+                    ->update('giftcodes')
+                    ->params([
+                        'updated_at' => $this->getTimestring(false,false),
+                        'statistics' => $this->stats->getJson()
+                    ])
+                    ->where(['code' => $code])
                     ->execute()
                     ->rowCount();
         } catch (PDOException $ex) {
             $this->p('<b>DB ERROR updating giftcodes:</b> '.$ex->getMessage(),'p',true);
         }
-        return $giftResponse;
     }
 
     ///////////////////////// Guzzle functions
-    private function signIn($fid) {
+    private function signInWOS($fid) {
 /*
     ====== Headers:
     Date: Sun, 30 Jun 2024 16:42:27 GMT
@@ -1331,7 +1399,7 @@ class WosController extends Controller {
         );
     }
 
-    private function sendGiftCode($fid, $giftCode) {
+    private function sendGiftCodeWOS($fid, $giftCode) {
 /*
 Headers:
     [date] => Tue, 02 Jul 2024 13:03:07 GMT
@@ -1372,6 +1440,7 @@ Body3:
         static $rateRemainId   = 0;
         static $rateRemainCode = 0;
 
+        ///////////////// DEBUG - EMULATE
         if ( $this->guzEmulate ) {
             if ($rateRemainId<1)   { $rateRemainId     =7; }
             if ($rateRemainCode<1) { $rateRemainCode   =7; }
@@ -1411,6 +1480,7 @@ Body3:
             }
         }
 
+        //////////////// PRODUCTION => hit WOS API
         $timestring = $this->getTimestring(empty($cdk));
         $signRaw = ($cdk ? "cdk=$cdk&" : '').
             "fid=$fid&time=$timestring".self::HASH;
@@ -1756,6 +1826,69 @@ class playerExtra {
             $a[$field] = $this->$field;
         }
         return $a;
+    }
+}
+
+/**
+ * Manage giftcode statistics
+ */
+class giftcodeStatistics {
+    public $usersSending       = [];
+    public $expected           = [];
+    public $succesful          = 0;
+    public $alreadyReceived    = 0;
+    public $hitRateLimit       = 0;
+    public $networkError       = 0;
+    public $signinErrorCodes   = [];
+    public $giftErrorCodes     = [];
+    public $deletedPlayers     = [];
+
+    private $log;
+    public function __construct() {
+        $this->log = app()->logger();
+    }
+
+    /**
+     * Increment the value of one of the array statistics
+     */
+    public function increment(string $varName, string $key) {
+        if ( empty($this->$varName[$key]) ) {
+            $this->$varName[$key] = 1;
+        } else {
+            $this->$varName[$key]++;
+        }
+    }
+
+    /**
+     * Set or replace object values
+     * @param string $statistics     JSON string stored in 'statistics' DB column
+     */
+    public function parseJsonStatistics($statistics) {
+        // First reset everything to defaults
+        foreach ($this as $field => $value) {
+            if ( !is_object($value) ) {
+                $this->$field = (is_array($value) ? [] : 0);
+            }
+        }
+        if (empty($statistics)) {
+            return;
+        }
+        try {
+            $x = json_decode($statistics, JSON_OBJECT_AS_ARRAY);
+            foreach ($x as $name => $value) {
+                $this->$name = $value;
+            }
+        } catch (\Exception $e) {
+            $this->log->info(__METHOD__.' Exception: '.$e->getMessage());
+            $this->log->info('statistics='.$statistics);
+        }
+    }
+
+    /**
+     * Returns JSON-encoded string of giftcodeStatistics object
+     */
+    public function getJson() {
+        return json_encode($this, JSON_UNESCAPED_UNICODE | JSON_OBJECT_AS_ARRAY);
     }
 }
 

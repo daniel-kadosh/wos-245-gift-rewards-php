@@ -28,7 +28,7 @@ class CreateGiftcodes extends Database
             static::$capsule::schema()->create("giftcodes", function (Blueprint $table) {
                 $table->id('id');
                 $table->string('code')->unique();
-                $table->integer('player_count')->default(0);
+                $table->longtext('statistics')->default('{}');
                 $table->timestamps(); // created_at, updated_at
             });
         }
