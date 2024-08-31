@@ -34,7 +34,13 @@ class WosController extends Controller {
             'alliance_id'   => 'Alliance',
             'ignore'        => 'Ignore'
         ];
-
+    const GIFTCODE_COLUMNS = [
+            'ID'            => 'id',
+            'Giftcode'      => 'code',
+            'Player Count'  => 'player_count',
+            'First Sent UTC'=> 'created_at',
+            'Last Sent UTC' => 'updated_at'
+        ];
     private $time = null;   // tick() DateTime object
     private $guz;           // Guzzle HTTP client object
     private $log;           // Leaf logger
@@ -85,6 +91,8 @@ class WosController extends Controller {
             '.<br/>By default will add in alliance ['.self::OUR_ALLIANCE.'] but you can change afterwards.'),'tr');
         $this->p(sprintf($lineFormat,'remove/','remove/','[playerID]',
             'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
+        $this->p(sprintf($lineFormat,'giftcodes','giftcodes','',
+            'List sent Giftcodes','Summary statistics of Giftcodes sent in the past'),'tr');
         $this->p(sprintf($lineFormat,'download','download/','[format]',
             'Download player DB','Supported formats: <b>csv</b>, <b>json</b>, <b>curl</b> (bash script to re-add users), <b>sqlite3</b>'),'tr');
 
@@ -106,11 +114,10 @@ class WosController extends Controller {
     }
 
     /**
-     * List players & last gift reward result.
+     * List & edit current alliances.
      */
     public function alliances() {
         $this->htmlHeader('== Alliance list');
-        $inputFormat = '<input placeholder="%s" type="text" id="%s" name="%s" size="%d">';
         $this->p('<table>');
         $this->p('<td><b>Add Alliance:</b></td><td colspan="2">'.
                     $this->allianceForm('Add').'</td>'
@@ -133,12 +140,7 @@ class WosController extends Controller {
             $n = 0;
             foreach ($allAlliances as $a) {
                 $n++;
-                #$this->p('<tr>');
                 $this->p($this->allianceForm('Update',$a),'tr');
-                #$this->p(sprintf('<input onclick="return removeConfirm(\'%s\')" '.
-                #                   'type="submit" value="%s" formmethod="get"/>',
-                #                   '/alliance/remove/'.$a['id'],'Remove'),'td');
-                #$this->p('</tr>');
             }
             $this->p('</table>');
             if ( $n==0 ) {
@@ -150,9 +152,9 @@ class WosController extends Controller {
                     "so that the player list has this information.<br/>".
                     "We can't get this information from WOS APIs :-(", 'p');
         } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p',true);
+            $this->p(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),'p',true);
         } catch (\Exception $ex) {
-            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p',true);
+            $this->p(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),'p',true);
         }
         $this->htmlFooter();
     }
@@ -186,9 +188,9 @@ class WosController extends Controller {
             $this->p('Added succesfully!','p',true);
             $this->pDebug('Details',$allianceData);
         } catch (PDOException $ex) {
-            $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
+            $this->pExit(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),500);
         } catch (\Exception $ex) {
-            $this->pExit('<b>Exception:</b> '.$ex->getMessage(),500);
+            $this->pExit(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),500);
         }
         $this->htmlFooter();
     }
@@ -219,9 +221,9 @@ class WosController extends Controller {
             $this->p('Updated succesfully!','p',true);
             $this->pDebug('Details',$allianceData);
         } catch (PDOException $ex) {
-            $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
+            $this->pExit(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),500);
         } catch (\Exception $ex) {
-            $this->pExit('<b>Exception:</b> '.$ex->getMessage(),500);
+            $this->pExit(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),500);
         }
         $this->htmlFooter();
     }
@@ -397,9 +399,9 @@ class WosController extends Controller {
             }
             $this->logInfo('Listed '.($n-1).' players');
         } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR:</b> '.$ex->getMessage(),'p');
+            $this->p(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),'p');
         } catch (\Exception $ex) {
-            $this->p('<b>Exception:</b> '.$ex->getMessage(),'p');
+            $this->p(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),'p');
         }
         $this->htmlFooter();
     }
@@ -411,6 +413,19 @@ class WosController extends Controller {
         $this->htmlHeader('== Send Gift Code');
         $this->validateGiftCode($giftCode);
         $this->p("Sending <b>$giftCode</b> to all players that haven't yet received it:",'p');
+
+        // Create initial stub record for this giftcode
+        try {
+            $t = $this->time->format('YYYY-MM-DD HH:mm:ss');
+            db()->query('INSERT INTO giftcodes(code,created_at,updated_at) '.
+                        'VALUES (?,?,?) ON CONFLICT(code) '.
+                        'DO UPDATE SET updated_at=?')
+                ->bind($giftCode, $t, $t, $t)
+                ->execute();
+        } catch (PDOException $ex) {
+            $this->p('<b>DB ERROR upserting giftcode:</b> '.$ex->getMessage(),'p',true);
+        }
+
         $httpReturnCode = 200;
         $errMsg = [];
         $n = 0; // # of players attempted
@@ -424,6 +439,9 @@ class WosController extends Controller {
                 ->orderBy('id','asc')
                 ->all();
             $numPlayers = count($allPlayers);
+            if ($this->dbg) {
+                $this->p(__METHOD__." Found $numPlayers to process",'p',true);
+            }
             if ( $numPlayers == 0 ) {
                 $errMsg[] = 'No players in the database that still need that gift code.';
                 $httpReturnCode = 404;
@@ -473,10 +491,10 @@ class WosController extends Controller {
                 }
             }
         } catch (PDOException $ex) {
-            $errMsg[] = '<b>DB ERROR:</b> '.$ex->getMessage();
+            $errMsg[] = __METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage();
             $httpReturnCode = 500;
         } catch (\Exception $ex) {
-            $errMsg[] = '<b>Exception:</b> '.$ex->getMessage();
+            $errMsg[] = __METHOD__.' <b>Exception:</b> '.$ex->getMessage();
             $httpReturnCode = 500;
         }
         if ( $this->badResponsesLeft<1 ) {
@@ -549,9 +567,9 @@ class WosController extends Controller {
             $this->p('Player added into the database: <b>'.$playerData['player_name'].'</b>','p',true);
             $this->pDebug('Details',$playerData);
         } catch (PDOException $ex) {
-            $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
+            $this->pExit(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),500);
         } catch (\Exception $ex) {
-            $this->pExit('<b>Exception:</b> '.$ex->getMessage(),500);
+            $this->pExit(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),500);
         }
         $this->htmlFooter();
     }
@@ -607,9 +625,9 @@ class WosController extends Controller {
                 $this->pExit('No rows updated for <b>'.$playerData['player_name'].'</b>',500);
             }
         } catch (PDOException $ex) {
-            $this->pExit('<b>DB ERROR:</b> '.$ex->getMessage(),500);
+            $this->pExit(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),500);
         } catch (\Exception $ex) {
-            $this->pExit('<b>Exception:</b> '.$ex->getMessage(),500);
+            $this->pExit(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),500);
         }
         $this->htmlFooter();
     }
@@ -633,6 +651,55 @@ class WosController extends Controller {
             $this->pExit("Could not delete player id=$player_id ??",404);
         }
         $this->p("REMOVED player ID=$player_id succesfully",'p',true);
+        $this->htmlFooter();
+    }
+
+    /**
+     * List past Giftcodes.
+     */
+    public function giftcodes() {
+        $this->htmlHeader('== Sent Giftcode List');
+        $this->p('This is a summary of gift codes sent in the past','p');
+        $this->p('<table><tr>');
+        foreach (array_keys(self::GIFTCODE_COLUMNS) as $colName) {
+            $this->p($colName,'th');
+        }
+        $this->p('</tr>');
+        try {
+            $allGiftcodes = db()
+                ->select('giftcodes')
+                ->orderBy('id','desc')
+                ->all();
+            foreach ($allGiftcodes as $a) {
+                $this->p('<tr>');
+                foreach (self::GIFTCODE_COLUMNS as $col) {
+                    $val = $a[$col];
+                    switch ($col) {
+                        case 'player_count':
+                            $this->p('<td style="text-align: center;">'.$val.'</td>');
+                            continue 2;
+                        case 'code':
+                        case 'created_at':
+                            $val = "<b>$val</b>";
+                            break;
+                        default:
+                            break;
+                    }
+                    $this->p($val,'td');
+                }
+                $this->p('</tr>');
+            }
+            $this->p('</table>');
+            $n = count($allGiftcodes);
+            if ( $n<1 ) {
+                $this->p('No sent Giftcodes in the database!','p');
+            }
+            $this->logInfo("Listed $n Giftcodes");
+        } catch (PDOException $ex) {
+            $this->p(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),'p',true);
+        } catch (\Exception $ex) {
+            $this->p(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),'p',true);
+        }
         $this->htmlFooter();
     }
 
@@ -1053,10 +1120,10 @@ class WosController extends Controller {
                 // Timeout or network error
                 $this->p('(Network error: '.$signInResponse['guzExceptionMessage'].') ',0,true);
                 $this->badResponsesLeft--;
-                sleep(2);
+                sleep($this->guzEmulate ? 0 : 2);
             } else if ($signInResponse['http-status']==429) {
                 // Hit rate limit!
-                $sleepAmount = 61;
+                $sleepAmount = $this->guzEmulate ? 1 : 61;
                 $this->p("(Pausing $sleepAmount sec due to 429 signIn rate limit) ",0,true);
             } else if ($signInResponse['http-status'] >= 400) {
                 $this->p(sprintf('<b>ABORT: WOS signIn API ERROR:</b> httpCode=%s Message=%s',
@@ -1124,7 +1191,7 @@ class WosController extends Controller {
             if (empty($giftResponse['http-status'])) {
                 // Timeout or network error
                 $giftResponse['msg'] = $giftResponse['guzExceptionMessage'];
-                $sleepAmount = 2;
+                $sleepAmount = $this->guzEmulate ? 0 : 2;
                 $this->p('(Network error: '.$giftResponse['msg']." - pause $sleepAmount sec.) ",0,true);
                 $this->badResponsesLeft--;
                 continue; // Retry
@@ -1188,7 +1255,7 @@ class WosController extends Controller {
                     ])
                     ->where(['id' => $playerId])
                     ->execute();
-                $sleepAmount = $resetIn;
+                $sleepAmount = $this->guzEmulate ? 1 : $resetIn;
             } else { // Success!
                 break;
             }
@@ -1220,6 +1287,18 @@ class WosController extends Controller {
         if ( ! $sendGiftGood ) {
             $this->p('Cannot confirm we can continue, stopping now.','p',true);
             return null;
+        }
+
+        try {
+            $rowsUpdated = db()
+                    ->query('UPDATE giftcodes'.
+                        ' SET player_count=player_count+1, updated_at=?'.
+                        ' WHERE code=?')
+                    ->bind($this->time->format('YYYY-MM-DD HH:mm:ss'), $giftCode)
+                    ->execute()
+                    ->rowCount();
+        } catch (PDOException $ex) {
+            $this->p('<b>DB ERROR updating giftcodes:</b> '.$ex->getMessage(),'p',true);
         }
         return $giftResponse;
     }
@@ -1444,6 +1523,7 @@ Body3:
         $this->p('<a href="/">Home</a>','td');
         $this->p('<b>|</b> <a href="/alliances">Alliances</a>','td');
         $this->p('<b>|</b> <a href="/players">Players</a>','td');
+        $this->p('<b>|</b> <a href="/giftcodes">Giftcodes</a>','td');
         $this->p('<b>|</b> <a href="/download">Download</a>','td');
         $this->p('<td width="5">&nbsp;</td>');
         $this->p($this->menuForm('Add','player ID','','['.self::OUR_ALLIANCE.'] '),'td');

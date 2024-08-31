@@ -20,6 +20,8 @@ app()->post('/update/{player_id}', "WosController@update"); // POST: fields in e
 app()->get('/remove/{player_id}', "WosController@remove");
 app()->get("/send/{gift_code}", "WosController@send");
 
+app()->get("/giftcodes", "WosController@giftcodes");
+
 app()->get("/download/{fileFormat}", "WosController@download");
 app()->get("/download", "WosController@download");
 
