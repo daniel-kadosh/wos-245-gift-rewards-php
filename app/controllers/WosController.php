@@ -1685,7 +1685,9 @@ Body3:
         // Handle asc vs. desc order with multiplier
         $multiplier = ($dir=='asc' ? 1 : -1);
         return function ($a, $b) use ($key,$multiplier) {
-            $ret = strnatcmp($a[$key], $b[$key]) * $multiplier;
+            $ret = $key='player_name' ?
+                    strnatcmp(strtolower($a['player_name']), strtolower($b['player_name'])) * $multiplier
+                    : strnatcmp($a[$key], $b[$key]) * $multiplier;
             // 2nd sort key: player_name ASC
             return $ret==0 ?
                         strcmp(strtolower($a['player_name']), strtolower($b['player_name']))
