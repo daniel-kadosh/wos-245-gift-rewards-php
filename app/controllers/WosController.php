@@ -41,6 +41,7 @@ class WosController extends Controller {
             'First Sent UTC'    => 'created_at',
             'Succesful'         => 'succesful',
             'Had Gift'          => 'alreadyReceived',
+            'Runtime (sec)'     => 'runtime',
             'Last Sent UTC'     => 'updated_at',
             'Deleted Players'   => 'deletedPlayers',
             'Expected'          => 'expected',
@@ -62,7 +63,6 @@ class WosController extends Controller {
         parent::__construct();
         $this->request = new Request;
         db()->autoConnect();
-        $this->time = tick();
         $this->guz = new Client(['timeout'=>10]);
         $this->dbg = ( _env('APP_DEBUG')=='true' );
         $this->guzEmulate = ( _env('GUZZLE_EMULATE')=='true' );
@@ -425,6 +425,7 @@ class WosController extends Controller {
 
         // Create initial stub record for this giftcode
         $this->stats = new giftcodeStatistics();
+        $startTime = $this->getTimestring(true,true);
         try {
             $gc = db()->select('giftcodes','statistics')
                 ->where(['code' => $giftCode])
@@ -437,7 +438,7 @@ class WosController extends Controller {
             }
             $this->stats->increment('usersSending',$_SERVER['REMOTE_USER']);
             $s = $this->stats->getJson();
-            $t = $this->getTimestring(true,false);
+            $t = $this->getTimestring(false,false);
             db()->query('INSERT INTO giftcodes(code,created_at,updated_at,statistics) '.
                         'VALUES (?,?,?,?) ON CONFLICT(code) '.
                         'DO UPDATE SET updated_at=?, statistics=?')
@@ -535,8 +536,9 @@ class WosController extends Controller {
             $httpReturnCode = 500;
         }
         $this->p("Processed $n players",'p',true);
+        $this->stats->runtime = $this->stats->runtime + ($this->getTimestring(true,true) - $startTime);
+        $this->updateGiftcodeStats($giftCode);
         if ( $httpReturnCode>200 ) {
-            $this->updateGiftcodeStats($giftCode);
             if ( $httpReturnCode>404 ) {
                 $errMsg[] = 'Incomplete run!';
             }
@@ -1360,7 +1362,7 @@ class WosController extends Controller {
             $rowsUpdated = db()
                     ->update('giftcodes')
                     ->params([
-                        'updated_at' => $this->getTimestring(false,false),
+                        'updated_at' => $this->getTimestring(true,false),
                         'statistics' => $this->stats->getJson()
                     ])
                     ->where(['code' => $code])
@@ -1545,8 +1547,8 @@ Body3:
     }
 
     private function getTimestring($renew=false,$inUnixTime=true) {
-        if ($renew) {
-            $this->time = tick();
+        if (empty($this->time) || $renew) {
+            $this->time = tick('now');
         }
 	    return (string) $this->time->format($inUnixTime ? 'U':
                 'YYYY-MM-DD HH:mm:ss');
@@ -1842,6 +1844,7 @@ class giftcodeStatistics {
     public $signinErrorCodes   = [];
     public $giftErrorCodes     = [];
     public $deletedPlayers     = [];
+    public $runtime            = 0;
 
     private $log;
     public function __construct() {
