@@ -53,6 +53,7 @@ Run without parameters to get usage details.
 Runtime files you need to create:
 * `wos245/apache-auth` Apache digest auth user file. Use `wosh.sh -u USERNAME` to create at least 1 user,
 then you can manage using the "hidden" `/admin` menu from your web browser.
+The `/admin/*` hidden menu relies on digest auth being the mechanism to handle users of the app.
 * `wos245/valhalla245.duckdns.org/*` SSL certificates, installed manually
 
 Runtime files created automatically
