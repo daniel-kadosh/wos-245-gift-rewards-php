@@ -278,8 +278,8 @@ class WosController extends Controller {
         // Filters for list
         $urlParams = request()->params();
         unset ($urlParams[0]);
-        $sortParams = array_intersect_key($urlParams,['sort'=>0,'dir'=>1]);
         $this->p('<table><tr><form>');
+        $sortParams = array_intersect_key($urlParams,['sort'=>0,'dir'=>1]);
         foreach ($sortParams as $key => $val) {
             // Couldn't find a cleaner way to pass existing sort options in URL
             $this->p(sprintf('<input type="hidden" name="%s" value="%s">',
@@ -361,7 +361,7 @@ class WosController extends Controller {
 
             // Display
             $n = 1;
-            $actionFormat = '<input onclick="return removeConfirm(\'/%s\')" '.
+            $actionFormat = '<input onclick="return removeConfirm(\'/%s\',\'%s\')" '.
                                 'type="submit" value="%s" formmethod="get"/>';
             foreach ($allPlayers as $p) {
                 #$this->pDebug('player',$p); break;
@@ -398,8 +398,9 @@ class WosController extends Controller {
                     }
                 }
                 $this->p('<input type="submit" value="Update"></form>'.
-                        sprintf($actionFormat,'remove/'.$p['id'],'Remove'),
-                        'th');
+                        sprintf($actionFormat,'remove/'.$p['id'],$p['player_name'],'Remove').
+                        sprintf($actionFormat,'updateFromWOS/'.$p['id'],$p['player_name'],'Update from WOS'),
+                        'td');
                 $this->p('</tr>');
             }
             $this->p('</table>');
@@ -661,6 +662,44 @@ class WosController extends Controller {
             } else {
                 $this->pExit('No rows updated for <b>'.$playerData['player_name'].'</b>',500);
             }
+        } catch (PDOException $ex) {
+            $this->pExit(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),500);
+        } catch (\Exception $ex) {
+            $this->pExit(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),500);
+        }
+        $this->htmlFooter();
+    }
+
+    /**
+     * Update player data from WOS
+     */
+    public function updateFromWOS($player_id) {
+        $this->htmlHeader('== Update player from WOS');
+        $player_id = $this->validateId($player_id);
+        $this->p("Updating player data from WOS for id=$player_id",'p',true);
+        try {
+            // Ensure we already have him before hitting WOS API
+            $playerData = db()
+                ->select('players')
+                ->find($player_id);
+            if (empty($playerData)) {
+                $this->pExit('<b>ERROR:</b> player ID not found',404);
+            }
+
+            // Verify in MOS API
+            $this->badResponsesLeft = 3;
+            $this->stats = new giftcodeStatistics(); // won't use, but verifyPlayerInWOS needs it
+            $signInResponse = $this->verifyPlayerInWOS($playerData);
+            if ( ! is_null($signInResponse) && $signInResponse['playerGood'] ) {
+                $this->p('Player succesfully verified in MOS</p>');
+            } // else message about 'deleted' or WOS API problem already given.
+
+            // Dump player data
+            $pe = new playerExtra($playerData['extra'],true);
+            $playerData = array_merge($playerData,$pe->getArray(true));
+            unset($playerData['extra']);
+            $this->pDebug('<b>Results</b>',$playerData);
+
         } catch (PDOException $ex) {
             $this->pExit(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),500);
         } catch (\Exception $ex) {
@@ -1149,7 +1188,7 @@ class WosController extends Controller {
         }
         return -1;
     }
-    private function verifyPlayerInWOS($p) {
+    private function verifyPlayerInWOS( &$p ) {
         // Verify player
         $this->p('<p>'.$p['id'].' - <b>'.$p['player_name'].'</b>: ',0,true);
         $tries = 3;
@@ -1199,11 +1238,11 @@ class WosController extends Controller {
             $this->p(sprintf('DELETING player: invalid %s</p>',
                             $stateID==-1 ? 'WOS user' : 'state (#'.$stateID.')'
                         ),0,true);
-            $this->stats->deletedPlayers[ $p['id'] ] = $p['player_name'];
             if ( $this->deleteById('players',$p['id']) == -1 ) {
                 // Exception thrown during delete, so let's just stop
                 return null;
             }
+            $this->stats->deletedPlayers[ $p['id'] ] = $p['player_name'];
             $signInResponse['playerGood'] = false;
         } else if (
             $p['player_name']       != $sd->nickname        ||
@@ -1212,16 +1251,18 @@ class WosController extends Controller {
             $p['stove_lv_content']  != $sd->stove_lv_content   )
         {
             // Update player if needed
-            db()->update('players')
-                ->params([
+            $data = [
                     'player_name'       => $sd->nickname,
                     'avatar_image'      => $sd->avatar_image,
                     'stove_lv'          => $sd->stove_lv,
                     'stove_lv_content'  => $sd->stove_lv_content,
                     'updated_at'        => $this->getTimestring(false,false)
-                ])
+                    ];
+            db()->update('players')
+                ->params($data)
                 ->where(['id' => $p['id']])
                 ->execute();
+            $p = array_merge($p, $data);
         }
         return $signInResponse;
     }
@@ -1565,8 +1606,8 @@ Body3:
             button { background-color: #ADD8E6; font-weight: bold; }');\n",
             'style');
         $this->p("<script type=\"text/javascript\">
-            function removeConfirm(url) {
-                if (confirm(`\${url} Are you sure?`)) {
+            function removeConfirm(url,name) {
+                if (confirm(`\${url} \${name}\nAre you sure?`)) {
                     location.href = url;
                 } else {
                     return false;
@@ -1578,7 +1619,7 @@ Body3:
                     return false;
                 }
                 url = `/\${action}/\${id}`;
-                removeConfirm(url);
+                removeConfirm(url,'');
                 return false;
             }
             function gotoURL(url) {
