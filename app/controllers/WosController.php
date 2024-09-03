@@ -687,7 +687,7 @@ class WosController extends Controller {
             }
 
             // Verify in MOS API
-            $this->badResponsesLeft = 3;
+            $this->badResponsesLeft = 2;
             $this->stats = new giftcodeStatistics(); // won't use, but verifyPlayerInWOS needs it
             $signInResponse = $this->verifyPlayerInWOS($playerData);
             if ( ! is_null($signInResponse) && $signInResponse['playerGood'] ) {
@@ -1431,9 +1431,14 @@ class WosController extends Controller {
     ======== Body:
     {"code":1,"data":[],"msg":"params error","err_code":""}
     {"code":1,"data":[],"msg":"Sign Error","err_code":0}
-    {"code":0,"data":{"fid":33750731,"nickname":"lord33750731","kid":245,
-        "stove_lv":10,"stove_lv_content":10,
-        "avatar_image":"https:\/\/gof-formal-avatar.akamaized.net\/avatar-dev\/2023\/07\/17\/1001.png"},
+    {"code":0,"data":{
+        "fid":33750731,
+        "nickname":"lord33750731",
+        "kid":245,
+        "stove_lv":10,
+        "stove_lv_content":10,
+        "avatar_image":"https:\/\/gof-formal-avatar.akamaized.net\/avatar-dev\/2023\/07\/17\/1001.png"
+        },
         "msg":"success","err_code":""}
 */
         return $this->guzzlePOST(
@@ -1542,6 +1547,7 @@ Body3:
         }
         try {
             $guzExceptionMessage = '';
+            $guzExceptionCode = 0;
             $response = $this->guz->request('POST',
                 $url,
                 [
@@ -1555,10 +1561,17 @@ Body3:
             // With a 4xx or 5xx HTTP return code, Guzzle throws this exception.
             // Pull out Response object from exception class, process as "normal"
             $response = $e->getResponse();
-            $guzExceptionMessage = $e->getMessage();
+            $guzExceptionCode = $e->getCode();
+            $guzExceptionMessage = "$guzExceptionCode: ".$e->getMessage();
         } catch (\GuzzleHttp\Exception\RequestException $e) {
             // Networking error
-            $guzExceptionMessage = $e->getMessage();
+            $guzExceptionCode = $e->getCode();
+            $guzExceptionMessage = "$guzExceptionCode: ".$e->getMessage();
+            $response = null;
+        } catch (\Exception $e) {
+            // Catch curl errors, like '28: Operation timed out'
+            $guzExceptionCode = $e->getCode();
+            $guzExceptionMessage = "$guzExceptionCode: ".$e->getMessage();
             $response = null;
         }
 
@@ -1583,7 +1596,8 @@ Body3:
             'err_code'      => (isset($body->err_code) ? $body->err_code : null),
             'headers'       => $headers,
             'http-status'   => (!empty($response) ? $response->getStatusCode() : null),
-            'guzExceptionMessage' => $guzExceptionMessage
+            'guzExceptionMessage' => $guzExceptionMessage,
+            'guzExceptionCode' => $guzExceptionCode
         ];
     }
 
