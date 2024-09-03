@@ -278,8 +278,8 @@ class WosController extends Controller {
         // Filters for list
         $urlParams = request()->params();
         unset ($urlParams[0]);
-        $sortParams = array_intersect_key($urlParams,['sort'=>0,'dir'=>1]);
         $this->p('<table><tr><form>');
+        $sortParams = array_intersect_key($urlParams,['sort'=>0,'dir'=>1]);
         foreach ($sortParams as $key => $val) {
             // Couldn't find a cleaner way to pass existing sort options in URL
             $this->p(sprintf('<input type="hidden" name="%s" value="%s">',
@@ -361,7 +361,7 @@ class WosController extends Controller {
 
             // Display
             $n = 1;
-            $actionFormat = '<input onclick="return removeConfirm(\'/%s\')" '.
+            $actionFormat = '<input onclick="return removeConfirm(\'/%s\',\'%s\')" '.
                                 'type="submit" value="%s" formmethod="get"/>';
             foreach ($allPlayers as $p) {
                 #$this->pDebug('player',$p); break;
@@ -398,8 +398,9 @@ class WosController extends Controller {
                     }
                 }
                 $this->p('<input type="submit" value="Update"></form>'.
-                        sprintf($actionFormat,'remove/'.$p['id'],'Remove'),
-                        'th');
+                        sprintf($actionFormat,'remove/'.$p['id'],$p['player_name'],'Remove').
+                        sprintf($actionFormat,'updateFromWOS/'.$p['id'],$p['player_name'],'Update from WOS'),
+                        'td');
                 $this->p('</tr>');
             }
             $this->p('</table>');
@@ -661,6 +662,44 @@ class WosController extends Controller {
             } else {
                 $this->pExit('No rows updated for <b>'.$playerData['player_name'].'</b>',500);
             }
+        } catch (PDOException $ex) {
+            $this->pExit(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),500);
+        } catch (\Exception $ex) {
+            $this->pExit(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),500);
+        }
+        $this->htmlFooter();
+    }
+
+    /**
+     * Update player data from WOS
+     */
+    public function updateFromWOS($player_id) {
+        $this->htmlHeader('== Update player from WOS');
+        $player_id = $this->validateId($player_id);
+        $this->p("Updating player data from WOS for id=$player_id",'p',true);
+        try {
+            // Ensure we already have him before hitting WOS API
+            $playerData = db()
+                ->select('players')
+                ->find($player_id);
+            if (empty($playerData)) {
+                $this->pExit('<b>ERROR:</b> player ID not found',404);
+            }
+
+            // Verify in MOS API
+            $this->badResponsesLeft = 2;
+            $this->stats = new giftcodeStatistics(); // won't use, but verifyPlayerInWOS needs it
+            $signInResponse = $this->verifyPlayerInWOS($playerData);
+            if ( ! is_null($signInResponse) && $signInResponse['playerGood'] ) {
+                $this->p('Player succesfully verified in MOS</p>');
+            } // else message about 'deleted' or WOS API problem already given.
+
+            // Dump player data
+            $pe = new playerExtra($playerData['extra'],true);
+            $playerData = array_merge($playerData,$pe->getArray(true));
+            unset($playerData['extra']);
+            $this->pDebug('<b>Results</b>',$playerData);
+
         } catch (PDOException $ex) {
             $this->pExit(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),500);
         } catch (\Exception $ex) {
@@ -1149,7 +1188,7 @@ class WosController extends Controller {
         }
         return -1;
     }
-    private function verifyPlayerInWOS($p) {
+    private function verifyPlayerInWOS( &$p ) {
         // Verify player
         $this->p('<p>'.$p['id'].' - <b>'.$p['player_name'].'</b>: ',0,true);
         $tries = 3;
@@ -1199,11 +1238,11 @@ class WosController extends Controller {
             $this->p(sprintf('DELETING player: invalid %s</p>',
                             $stateID==-1 ? 'WOS user' : 'state (#'.$stateID.')'
                         ),0,true);
-            $this->stats->deletedPlayers[ $p['id'] ] = $p['player_name'];
             if ( $this->deleteById('players',$p['id']) == -1 ) {
                 // Exception thrown during delete, so let's just stop
                 return null;
             }
+            $this->stats->deletedPlayers[ $p['id'] ] = $p['player_name'];
             $signInResponse['playerGood'] = false;
         } else if (
             $p['player_name']       != $sd->nickname        ||
@@ -1212,16 +1251,18 @@ class WosController extends Controller {
             $p['stove_lv_content']  != $sd->stove_lv_content   )
         {
             // Update player if needed
-            db()->update('players')
-                ->params([
+            $data = [
                     'player_name'       => $sd->nickname,
                     'avatar_image'      => $sd->avatar_image,
                     'stove_lv'          => $sd->stove_lv,
                     'stove_lv_content'  => $sd->stove_lv_content,
                     'updated_at'        => $this->getTimestring(false,false)
-                ])
+                    ];
+            db()->update('players')
+                ->params($data)
                 ->where(['id' => $p['id']])
                 ->execute();
+            $p = array_merge($p, $data);
         }
         return $signInResponse;
     }
@@ -1390,9 +1431,14 @@ class WosController extends Controller {
     ======== Body:
     {"code":1,"data":[],"msg":"params error","err_code":""}
     {"code":1,"data":[],"msg":"Sign Error","err_code":0}
-    {"code":0,"data":{"fid":33750731,"nickname":"lord33750731","kid":245,
-        "stove_lv":10,"stove_lv_content":10,
-        "avatar_image":"https:\/\/gof-formal-avatar.akamaized.net\/avatar-dev\/2023\/07\/17\/1001.png"},
+    {"code":0,"data":{
+        "fid":33750731,
+        "nickname":"lord33750731",
+        "kid":245,
+        "stove_lv":10,
+        "stove_lv_content":10,
+        "avatar_image":"https:\/\/gof-formal-avatar.akamaized.net\/avatar-dev\/2023\/07\/17\/1001.png"
+        },
         "msg":"success","err_code":""}
 */
         return $this->guzzlePOST(
@@ -1501,6 +1547,7 @@ Body3:
         }
         try {
             $guzExceptionMessage = '';
+            $guzExceptionCode = 0;
             $response = $this->guz->request('POST',
                 $url,
                 [
@@ -1514,10 +1561,17 @@ Body3:
             // With a 4xx or 5xx HTTP return code, Guzzle throws this exception.
             // Pull out Response object from exception class, process as "normal"
             $response = $e->getResponse();
-            $guzExceptionMessage = $e->getMessage();
+            $guzExceptionCode = $e->getCode();
+            $guzExceptionMessage = "$guzExceptionCode: ".$e->getMessage();
         } catch (\GuzzleHttp\Exception\RequestException $e) {
             // Networking error
-            $guzExceptionMessage = $e->getMessage();
+            $guzExceptionCode = $e->getCode();
+            $guzExceptionMessage = "$guzExceptionCode: ".$e->getMessage();
+            $response = null;
+        } catch (\Exception $e) {
+            // Catch curl errors, like '28: Operation timed out'
+            $guzExceptionCode = $e->getCode();
+            $guzExceptionMessage = "$guzExceptionCode: ".$e->getMessage();
             $response = null;
         }
 
@@ -1542,7 +1596,8 @@ Body3:
             'err_code'      => (isset($body->err_code) ? $body->err_code : null),
             'headers'       => $headers,
             'http-status'   => (!empty($response) ? $response->getStatusCode() : null),
-            'guzExceptionMessage' => $guzExceptionMessage
+            'guzExceptionMessage' => $guzExceptionMessage,
+            'guzExceptionCode' => $guzExceptionCode
         ];
     }
 
@@ -1565,8 +1620,8 @@ Body3:
             button { background-color: #ADD8E6; font-weight: bold; }');\n",
             'style');
         $this->p("<script type=\"text/javascript\">
-            function removeConfirm(url) {
-                if (confirm(`\${url} Are you sure?`)) {
+            function removeConfirm(url,name) {
+                if (confirm(`\${url} \${name}\nAre you sure?`)) {
                     location.href = url;
                 } else {
                     return false;
@@ -1578,7 +1633,7 @@ Body3:
                     return false;
                 }
                 url = `/\${action}/\${id}`;
-                removeConfirm(url);
+                removeConfirm(url,'');
                 return false;
             }
             function gotoURL(url) {
@@ -1685,7 +1740,7 @@ Body3:
         // Handle asc vs. desc order with multiplier
         $multiplier = ($dir=='asc' ? 1 : -1);
         return function ($a, $b) use ($key,$multiplier) {
-            $ret = $key='player_name' ?
+            $ret = $key=='player_name' ?
                     strnatcmp(strtolower($a['player_name']), strtolower($b['player_name'])) * $multiplier
                     : strnatcmp($a[$key], $b[$key]) * $multiplier;
             // 2nd sort key: player_name ASC

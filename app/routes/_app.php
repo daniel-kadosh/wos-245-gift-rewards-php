@@ -17,6 +17,7 @@ app()->post("/alliance/update/{alliance_id}", "WosController@allianceUpdate");
 app()->get("/players", "WosController@players");
 app()->get('/add/{player_id}', "WosController@add");
 app()->post('/update/{player_id}', "WosController@update"); // POST: fields in extra JSON
+app()->get('/updateFromWOS/{player_id}', "WosController@updateFromWOS");
 app()->get('/remove/{player_id}', "WosController@remove");
 app()->get("/send/{gift_code}", "WosController@send");
 
