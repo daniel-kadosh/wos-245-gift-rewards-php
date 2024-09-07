@@ -36,15 +36,15 @@ class WosController extends Controller {
         ];
     const GIFTCODE_COLUMNS = [
             'ID'                => 'id',
+            'First Sent UTC'    => 'created_at',
             'Giftcode'          => 'code',
             'WebUser'           => 'usersSending',
-            'First Sent UTC'    => 'created_at',
             'Succesful'         => 'succesful',
             'Had Gift'          => 'alreadyReceived',
+            'Expected'          => 'expected',
             'Runtime (sec)'     => 'runtime',
             'Last Sent UTC'     => 'updated_at',
             'Deleted Players'   => 'deletedPlayers',
-            'Expected'          => 'expected',
             'hitRateLimit'      => 'hitRateLimit',
             'networkError'      => 'networkError',
             'signinErrorCodes'  => 'signinErrorCodes',
@@ -220,10 +220,8 @@ class WosController extends Controller {
             $this->validateAllianceData($allianceData);
 
             // All good, update!
-            $short_name = $allianceData['short_name'];
-            $this->p("Updating alliance name=<b>$short_name</b>",'p',true);
-            $result = db()
-                ->update('alliances')
+            $this->p("Updating alliance name=<b>".$allianceData['short_name']."</b>",'p',true);
+            db()->update('alliances')
                 ->params($allianceData)
                 ->where(['id' => $id])
                 ->execute();
@@ -372,13 +370,12 @@ class WosController extends Controller {
                     $xcol = substr($col,2);
                     switch ($col) {
                         case 'player_name' :
-                            $this->p('<img src="'.$p['avatar_image'].'" width="20"> <b>'.
-                                    $p['player_name'].'</b>','td');
+                            $this->p('<img src="'.$p['avatar_image'].'" width="20"> <b>'.$p[$col].'</b>','td');
                             break;
                         case 'stove_lv' :
                             $this->p((strlen($p['stove_lv_content']) > 6 ?
                                         '<img src="'.$p['stove_lv_content'].'" width="30">' :
-                                        'f'.$p['stove_lv']
+                                        'f'.$p[$col]
                                     ), 'td');
                             break;
                         case 'x:alliance_name':
@@ -397,9 +394,10 @@ class WosController extends Controller {
                             break;
                     }
                 }
+                $cleanPlayerName = strtr($p['player_name'],'\'" ','___');
                 $this->p('<input type="submit" value="Update"></form>'.
-                        sprintf($actionFormat,'remove/'.$p['id'],$p['player_name'],'Remove').
-                        sprintf($actionFormat,'updateFromWOS/'.$p['id'],$p['player_name'],'Update from WOS'),
+                        sprintf($actionFormat,'remove/'.$p['id'],$cleanPlayerName,'Remove').
+                        sprintf($actionFormat,'updateFromWOS/'.$p['id'],$cleanPlayerName,'Update from WOS'),
                         'td');
                 $this->p('</tr>');
             }
@@ -485,7 +483,7 @@ class WosController extends Controller {
                 if ($this->guzEmulate && $n>20) break;
 
                 $signInResponse = $this->verifyPlayerInWOS($p);
-                if ( $signInResponse == null ) {
+                if ( is_null($signInResponse) ) {
                     // Do not continue process, API problem
                     $this->updateGiftcodeStats($giftCode);
                     break;
@@ -589,7 +587,7 @@ class WosController extends Controller {
             $t = $this->getTimestring(true,false);
             $playerData = [
                 'id'            => $player_id,
-                'player_name'   => $data->nickname,
+                'player_name'   => trim($data->nickname),
                 'last_message'  => '(Created)',
                 'avatar_image'  => $data->avatar_image,
                 'stove_lv'      => $data->stove_lv,
@@ -675,31 +673,89 @@ class WosController extends Controller {
      */
     public function updateFromWOS($player_id) {
         $this->htmlHeader('== Update player from WOS');
-        $player_id = $this->validateId($player_id);
-        $this->p("Updating player data from WOS for id=$player_id",'p',true);
+        switch ( strtolower(trim($player_id)) ) {
+            case 'all':
+                $playerIDs = db()
+                    ->select('players','id')
+                    ->orderBy('id','asc')
+                    ->all();
+                break;
+            case 'ignored':
+                $playerIDs = db()
+                    ->select('players','id')
+                    ->where('extra', 'like', '%ignore":1%')
+                    ->orderBy('id','asc')
+                    ->all();
+                break;
+            default:
+                $playerIDs = [ $this->validateId($player_id) ];
+                break;
+        }
+        if ( empty($playerIDs) ) {
+            $this->pExit('<b>ERROR:</b> '.htmlentities($player_id).' players not found',404);
+        }
+        if ( isset($playerIDs[0]['id']) ) {
+            $playerIDs = array_map( function($v) { return $v['id']; }, $playerIDs);
+        }
+        $numPlayers = count($playerIDs);
+        if ( $numPlayers>1 ) {
+            $this->p("Verifying $numPlayers players",'p',true);
+        }
+
         try {
-            // Ensure we already have him before hitting WOS API
-            $playerData = db()
-                ->select('players')
-                ->find($player_id);
-            if (empty($playerData)) {
-                $this->pExit('<b>ERROR:</b> player ID not found',404);
-            }
-
-            // Verify in MOS API
-            $this->badResponsesLeft = 2;
             $this->stats = new giftcodeStatistics(); // won't use, but verifyPlayerInWOS needs it
-            $signInResponse = $this->verifyPlayerInWOS($playerData);
-            if ( ! is_null($signInResponse) && $signInResponse['playerGood'] ) {
-                $this->p('Player succesfully verified in MOS</p>');
-            } // else message about 'deleted' or WOS API problem already given.
+            $this->badResponsesLeft = 4; // max issues from WOS API before abort
+            $xrlrPauseTime = 61;
+            $n = 0;
+            foreach ($playerIDs as $playerID) {
+                usleep(100000); // 100msec slow-down between players
+                if ( $this->badResponsesLeft < 1 ) {
+                    break;
+                }
+                $n++;
+                if ($numPlayers==1) {
+                    $this->p("Updating player data from WOS for id=$player_id",'p',true);
+                }
+                // Ensure we already have him before hitting WOS API
+                $playerData = db()
+                    ->select('players')
+                    ->find($playerID);
+                if (empty($playerData)) {
+                    $this->pExit('<b>ERROR:</b> player ID not found',404);
+                }
 
-            // Dump player data
-            $pe = new playerExtra($playerData['extra'],true);
-            $playerData = array_merge($playerData,$pe->getArray(true));
-            unset($playerData['extra']);
-            $this->pDebug('<b>Results</b>',$playerData);
+                // Verify in MOS API
+                $signInResponse = $this->verifyPlayerInWOS($playerData);
+                if ( is_null($signInResponse) ) { // signal we need to abort
+                    break;
+                }
+                if ( $signInResponse['playerGood'] ) {
+                    if ($numPlayers==1) {
+                        $this->p('verified</p>');
+                    } else {
+                        $this->p(sprintf('verified! stove_lv=%d</p>', $playerData['stove_lv']),'',true);
+                    }
+                } // else message about 'deleted' or WOS API problem already given.
 
+                // API ratelimit: assume if it hits 0 we have to wait 1 minute
+                $xrlr = $signInResponse['headers']['x-ratelimit-remaining'];
+                if ($xrlr < 2 && $n < $numPlayers) {
+                    $this->p("(signIn x-ratelimit-remaining=$xrlr - pause $xrlrPauseTime sec) ",0,true);
+                    // Proactively sleep here
+                    if ( ! $this->guzEmulate ) {
+                        sleep($xrlrPauseTime);
+                    }
+                }
+            }
+            if ($numPlayers==1) {
+                // Dump single player data
+                $pe = new playerExtra($playerData['extra'],true);
+                unset($playerData['extra']);
+                $playerData = array_merge($playerData,$pe->getArray(true));
+                $this->pDebug('<b>Results</b>',$playerData);
+            } else if ($n==$numPlayers) {
+                $this->p('Completed succesfully.','p');
+            }
         } catch (PDOException $ex) {
             $this->pExit(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),500);
         } catch (\Exception $ex) {
@@ -745,6 +801,7 @@ class WosController extends Controller {
             $allGiftcodes = db()
                 ->select('giftcodes')
                 ->orderBy('id','desc')
+                ->limit(50)
                 ->all();
             $stats = new giftcodeStatistics();
             foreach ($allGiftcodes as $a) {
@@ -1245,24 +1302,24 @@ class WosController extends Controller {
             $this->stats->deletedPlayers[ $p['id'] ] = $p['player_name'];
             $signInResponse['playerGood'] = false;
         } else if (
-            $p['player_name']       != $sd->nickname        ||
+            $p['player_name']       != trim($sd->nickname)  ||
             $p['avatar_image']      != $sd->avatar_image    ||
             $p['stove_lv']          != $sd->stove_lv        ||
             $p['stove_lv_content']  != $sd->stove_lv_content   )
         {
             // Update player if needed
             $data = [
-                    'player_name'       => $sd->nickname,
+                    'player_name'       => trim($sd->nickname),
                     'avatar_image'      => $sd->avatar_image,
                     'stove_lv'          => $sd->stove_lv,
                     'stove_lv_content'  => $sd->stove_lv_content,
                     'updated_at'        => $this->getTimestring(false,false)
                     ];
+            $p = array_merge($p, $data);
             db()->update('players')
                 ->params($data)
                 ->where(['id' => $p['id']])
                 ->execute();
-            $p = array_merge($p, $data);
         }
         return $signInResponse;
     }
@@ -1740,13 +1797,20 @@ Body3:
         // Handle asc vs. desc order with multiplier
         $multiplier = ($dir=='asc' ? 1 : -1);
         return function ($a, $b) use ($key,$multiplier) {
-            $ret = $key=='player_name' ?
-                    strnatcmp(strtolower($a['player_name']), strtolower($b['player_name'])) * $multiplier
-                    : strnatcmp($a[$key], $b[$key]) * $multiplier;
+            if ($key=='player_name') {
+                // Force case-INsensitive
+                return strnatcmp(strtolower($a['player_name']), strtolower($b['player_name'])) * $multiplier;
+            }
+            $ret = strnatcmp($a[$key], $b[$key]) * $multiplier;
+            if ($ret!=0) {
+                // Put blank fields at the bottom of the list
+                if ($multiplier>0 && (empty($a[$key]) || empty($b[$key])) ) {
+                    return -$ret;
+                }
+                return $ret;
+            }
             // 2nd sort key: player_name ASC
-            return $ret==0 ?
-                        strcmp(strtolower($a['player_name']), strtolower($b['player_name']))
-                        : $ret;
+            return strnatcmp(strtolower($a['player_name']), strtolower($b['player_name']));
         };
     }
 }
@@ -1812,9 +1876,9 @@ class playerExtra {
                     [-1 => 'all'] + $this->alliances :
                     $this->alliances;
                 break;
-            case self::F_RANK:
-                $options = &$this->ranks;
-                break;
+            #case self::F_RANK:
+            #    $options = &$this->ranks;
+            #    break;
             case self::F_INT:
                 return sprintf('<input type="number" id="%s" name="%s" value="%d">',
                             $field,$field,$this->$field);
@@ -1858,7 +1922,7 @@ class playerExtra {
         try {
             $x = json_decode($extra);
             foreach ($x as $name => $value) {
-                $this->$name = $value;
+                $this->$name = trim($value);
             }
         } catch (\Exception $e) {
             $this->log->info(__METHOD__.' Exception: '.$e->getMessage());
