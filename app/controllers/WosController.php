@@ -100,6 +100,9 @@ class WosController extends Controller {
             '.<br/>By default will add in alliance ['.self::OUR_ALLIANCE.'] but you can change afterwards.'),'tr');
         $this->p(sprintf($lineFormat,'remove/','remove/','[playerID]',
             'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
+        $this->p(sprintf($lineFormat,'updateFromWOS/','updateFromWOS/','[playerID|ignore]',
+            'Revalidate with WOS','Updates player metadata (name, furnace, etc) with WOS API.<br/>'.
+            'Can update a specific player by ID or those marked "ignore"'),'tr');
         $this->p(sprintf($lineFormat,'giftcodes','giftcodes','',
             'List sent Giftcodes','Summary statistics of Giftcodes sent in the past'),'tr');
         $this->p(sprintf($lineFormat,'download','download/','[format]',
@@ -674,13 +677,15 @@ class WosController extends Controller {
     public function updateFromWOS($player_id) {
         $this->htmlHeader('== Update player from WOS');
         switch ( strtolower(trim($player_id)) ) {
+            /* Could be hitting API too much, unnecessarily...
             case 'all':
                 $playerIDs = db()
                     ->select('players','id')
                     ->orderBy('id','asc')
                     ->all();
                 break;
-            case 'ignored':
+            */
+            case 'ignore':
                 $playerIDs = db()
                     ->select('players','id')
                     ->where('extra', 'like', '%ignore":1%')
