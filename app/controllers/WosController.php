@@ -1927,7 +1927,8 @@ class playerExtra {
         try {
             $x = json_decode($extra);
             foreach ($x as $name => $value) {
-                $this->$name = trim($value);
+                $type = $this->fields[$name];
+                $this->$name = ($type==self::F_STRING ? trim($value) : (int) $value);
             }
         } catch (\Exception $e) {
             $this->log->info(__METHOD__.' Exception: '.$e->getMessage());
@@ -1950,8 +1951,8 @@ class playerExtra {
         if ($includeHidden) {
             $a['alliance_name'] = $this->alliances[ intval($this->alliance_id) ];
         }
-        foreach (array_keys($this->fields) as $field) {
-            $a[$field] = $this->$field;
+        foreach ($this->fields as $field => $type) {
+            $a[$field] = ($type==self::F_STRING ? $this->$field : (int) $this->$field);
         }
         return $a;
     }
