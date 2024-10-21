@@ -1808,9 +1808,14 @@ Body3:
             }
             $ret = strnatcmp($a[$key], $b[$key]) * $multiplier;
             if ($ret!=0) {
-                // Put blank fields at the bottom of the list
-                if ($multiplier>0 && (empty($a[$key]) || empty($b[$key])) ) {
-                    return -$ret;
+                // Put blank fields & '-' alliance at the bottom of the list
+                if ($multiplier>0) {
+                    if (empty($a[$key]) || empty($b[$key])) {
+                        return -$ret;
+                    }
+                    if ($a[$key]=='-' || $b[$key]=='-') {
+                        return -$ret;
+                    }
                 }
                 return $ret;
             }
