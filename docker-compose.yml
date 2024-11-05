@@ -5,6 +5,7 @@ services:
     image: leafphp/docker
     ports:
       - '80:80'
+      - '81:81'
       - '443:443'
     volumes:
       - .:/var/www
