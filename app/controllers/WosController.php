@@ -184,7 +184,6 @@ class WosController extends Controller {
         $this->htmlHeader('== Add Alliance');
         $allianceData = ['id' => null];
         $this->validateAllianceData($allianceData);
-
         $short_name = $allianceData['short_name'];
         $this->p("Adding alliance name=<b>$short_name</b>",'p',true);
         try {
@@ -283,7 +282,7 @@ class WosController extends Controller {
         }
 
         // Filters for list
-        $urlParams = request()->params();
+        $urlParams = request()->try(['sort','dir','alliance_id','ignore'],true);
         unset ($urlParams[0]);
         $this->p('<table><tr><form>');
         $sortParams = array_intersect_key($urlParams,['sort'=>0,'dir'=>1]);

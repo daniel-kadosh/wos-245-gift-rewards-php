@@ -1,12 +1,5 @@
 <?php
 
-/*
-app()->get('/', function () {
-    #response()->json(['message' => 'Congrats!! You\'re on Leaf API']);
-    #response()->status(400)->json(['message' => 'home']);
-});
-*/
-
 app()->get("/", "WosController@home");
 
 app()->get("/alliances", "WosController@alliances");

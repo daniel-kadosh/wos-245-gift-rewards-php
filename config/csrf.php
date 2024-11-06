@@ -46,7 +46,7 @@ return [
     | be active on. All other methods will be ignored.
     |
     */
-    'methods' => ['POST', 'PUT', 'PATCH', 'DELETE'],
+    'methods' => ['PATCH'],
 
     /*
     |--------------------------------------------------------------------------
