@@ -4,7 +4,7 @@ FROM thecodingmachine/php:8.3-v4-slim-apache
 
 ######## PHP + Composer config
 # https://leafphp.dev/docs/introduction/installation.html
-RUN composer global require leafs/mvc
+RUN composer global require leafs/leaf
 RUN sudo ln -s /root/.composer/vendor/bin/leaf /usr/local/bin/leaf
 
 # Extra config for PHP.ini

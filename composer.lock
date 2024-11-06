@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9028eaac258e1782389cf576bf46a6ab",
+    "content-hash": "780ee0f40022a3244a1a58bd02e8ca64",
     "packages": [
         {
             "name": "carbonphp/carbon-doctrine-types",
@@ -170,16 +170,16 @@
         },
         {
             "name": "doctrine/dbal",
-            "version": "3.8.6",
+            "version": "3.9.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/doctrine/dbal.git",
-                "reference": "b7411825cf7efb7e51f9791dea19d86e43b399a1"
+                "reference": "61446f07fcb522414d6cfd8b1c3e5f9e18c579ba"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/doctrine/dbal/zipball/b7411825cf7efb7e51f9791dea19d86e43b399a1",
-                "reference": "b7411825cf7efb7e51f9791dea19d86e43b399a1",
+                "url": "https://api.github.com/repos/doctrine/dbal/zipball/61446f07fcb522414d6cfd8b1c3e5f9e18c579ba",
+                "reference": "61446f07fcb522414d6cfd8b1c3e5f9e18c579ba",
                 "shasum": ""
             },
             "require": {
@@ -195,12 +195,12 @@
                 "doctrine/coding-standard": "12.0.0",
                 "fig/log-test": "^1",
                 "jetbrains/phpstorm-stubs": "2023.1",
-                "phpstan/phpstan": "1.11.5",
+                "phpstan/phpstan": "1.12.6",
                 "phpstan/phpstan-strict-rules": "^1.6",
-                "phpunit/phpunit": "9.6.19",
+                "phpunit/phpunit": "9.6.20",
                 "psalm/plugin-phpunit": "0.18.4",
                 "slevomat/coding-standard": "8.13.1",
-                "squizlabs/php_codesniffer": "3.10.1",
+                "squizlabs/php_codesniffer": "3.10.2",
                 "symfony/cache": "^5.4|^6.0|^7.0",
                 "symfony/console": "^4.4|^5.4|^6.0|^7.0",
                 "vimeo/psalm": "4.30.0"
@@ -263,7 +263,7 @@
             ],
             "support": {
                 "issues": "https://github.com/doctrine/dbal/issues",
-                "source": "https://github.com/doctrine/dbal/tree/3.8.6"
+                "source": "https://github.com/doctrine/dbal/tree/3.9.3"
             },
             "funding": [
                 {
@@ -279,7 +279,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-06-19T10:38:17+00:00"
+            "time": "2024-10-10T17:56:43+00:00"
         },
         {
             "name": "doctrine/deprecations",
@@ -700,16 +700,16 @@
         },
         {
             "name": "guzzlehttp/promises",
-            "version": "2.0.3",
+            "version": "2.0.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/guzzle/promises.git",
-                "reference": "6ea8dd08867a2a42619d65c3deb2c0fcbf81c8f8"
+                "reference": "f9c436286ab2892c7db7be8c8da4ef61ccf7b455"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/guzzle/promises/zipball/6ea8dd08867a2a42619d65c3deb2c0fcbf81c8f8",
-                "reference": "6ea8dd08867a2a42619d65c3deb2c0fcbf81c8f8",
+                "url": "https://api.github.com/repos/guzzle/promises/zipball/f9c436286ab2892c7db7be8c8da4ef61ccf7b455",
+                "reference": "f9c436286ab2892c7db7be8c8da4ef61ccf7b455",
                 "shasum": ""
             },
             "require": {
@@ -763,7 +763,7 @@
             ],
             "support": {
                 "issues": "https://github.com/guzzle/promises/issues",
-                "source": "https://github.com/guzzle/promises/tree/2.0.3"
+                "source": "https://github.com/guzzle/promises/tree/2.0.4"
             },
             "funding": [
                 {
@@ -779,7 +779,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-07-18T10:29:17+00:00"
+            "time": "2024-10-17T10:06:22+00:00"
         },
         {
             "name": "guzzlehttp/psr7",
@@ -1565,17 +1565,79 @@
             "time": "2022-04-14T13:47:10+00:00"
         },
         {
-            "name": "leafs/aloe",
-            "version": "dev-master",
+            "name": "jenssegers/blade",
+            "version": "v1.4.0",
             "source": {
                 "type": "git",
-                "url": "https://github.com/leafsphp/aloe.git",
-                "reference": "713ff39ddad83f29d19917b5f4b5c90902f2c885"
+                "url": "https://github.com/jenssegers/blade.git",
+                "reference": "22a3700e9fc469c19dd1c5e5bd1b9138195e421f"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/aloe/zipball/713ff39ddad83f29d19917b5f4b5c90902f2c885",
-                "reference": "713ff39ddad83f29d19917b5f4b5c90902f2c885",
+                "url": "https://api.github.com/repos/jenssegers/blade/zipball/22a3700e9fc469c19dd1c5e5bd1b9138195e421f",
+                "reference": "22a3700e9fc469c19dd1c5e5bd1b9138195e421f",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/view": "^5.5|^6.0|^7.0|^8.0",
+                "php": ">=7.0"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^6.0|^7.0",
+                "satooshi/php-coveralls": "^1.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Jenssegers\\Blade\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Jens Segers",
+                    "homepage": "https://jenssegers.com"
+                }
+            ],
+            "description": "The standalone version of Laravel's Blade templating engine for use outside of Laravel.",
+            "keywords": [
+                "blade",
+                "laravel",
+                "render",
+                "template",
+                "view"
+            ],
+            "support": {
+                "issues": "https://github.com/jenssegers/blade/issues",
+                "source": "https://github.com/jenssegers/blade/tree/v1.4.0"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/jenssegers",
+                    "type": "github"
+                },
+                {
+                    "url": "https://opencollective.com/jenssegers-blade",
+                    "type": "open_collective"
+                }
+            ],
+            "time": "2020-09-17T08:25:26+00:00"
+        },
+        {
+            "name": "leafs/aloe",
+            "version": "1.4.9",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/leafsphp/aloe.git",
+                "reference": "5b91d6d8a89f25c661dc75209acad21a0783df61"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/leafsphp/aloe/zipball/5b91d6d8a89f25c661dc75209acad21a0783df61",
+                "reference": "5b91d6d8a89f25c661dc75209acad21a0783df61",
                 "shasum": ""
             },
             "require": {
@@ -1589,7 +1651,6 @@
             "require-dev": {
                 "leafs/leaf": "*"
             },
-            "default-branch": true,
             "type": "library",
             "autoload": {
                 "psr-4": {
@@ -1620,7 +1681,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/aloe/issues",
-                "source": "https://github.com/leafsphp/aloe/tree/master"
+                "source": "https://github.com/leafsphp/aloe/tree/1.4.9"
             },
             "funding": [
                 {
@@ -1632,20 +1693,20 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-09-12T20:04:33+00:00"
+            "time": "2024-09-21T11:10:27+00:00"
         },
         {
             "name": "leafs/anchor",
-            "version": "v1.5.0",
+            "version": "v1.6.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/anchor.git",
-                "reference": "debc228afd63d46d94d0c1d02629c2d912ecb4ee"
+                "reference": "f4508398e87045b946b7e83f709790b491b0bb04"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/anchor/zipball/debc228afd63d46d94d0c1d02629c2d912ecb4ee",
-                "reference": "debc228afd63d46d94d0c1d02629c2d912ecb4ee",
+                "url": "https://api.github.com/repos/leafsphp/anchor/zipball/f4508398e87045b946b7e83f709790b491b0bb04",
+                "reference": "f4508398e87045b946b7e83f709790b491b0bb04",
                 "shasum": ""
             },
             "require-dev": {
@@ -1679,7 +1740,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/anchor/issues",
-                "source": "https://github.com/leafsphp/anchor/tree/v1.5.0"
+                "source": "https://github.com/leafsphp/anchor/tree/v1.6.2"
             },
             "funding": [
                 {
@@ -1691,20 +1752,20 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-07-09T00:51:55+00:00"
+            "time": "2024-10-10T13:55:24+00:00"
         },
         {
             "name": "leafs/auth",
-            "version": "v2.3.2",
+            "version": "v2.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/auth.git",
-                "reference": "8844171fd936db73568333a4529a85fc1a0af912"
+                "reference": "115dca27e3e95e2bff2aea4ff785942cb089c617"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/auth/zipball/8844171fd936db73568333a4529a85fc1a0af912",
-                "reference": "8844171fd936db73568333a4529a85fc1a0af912",
+                "url": "https://api.github.com/repos/leafsphp/auth/zipball/115dca27e3e95e2bff2aea4ff785942cb089c617",
+                "reference": "115dca27e3e95e2bff2aea4ff785942cb089c617",
                 "shasum": ""
             },
             "require": {
@@ -1753,7 +1814,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/auth/issues",
-                "source": "https://github.com/leafsphp/auth/tree/v2.3.2"
+                "source": "https://github.com/leafsphp/auth/tree/v2.4"
             },
             "funding": [
                 {
@@ -1765,28 +1826,25 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-10-06T17:53:01+00:00"
+            "time": "2024-08-17T05:19:28+00:00"
         },
         {
             "name": "leafs/blade",
-            "version": "v2.0.1",
+            "version": "v3.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/blade.git",
-                "reference": "fd7c5b5520999c93c214fe5cbab2eba40692bbc9"
+                "reference": "b4a3a5f68af6490bc70b9bb8f6fabbcd1246e732"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/blade/zipball/fd7c5b5520999c93c214fe5cbab2eba40692bbc9",
-                "reference": "fd7c5b5520999c93c214fe5cbab2eba40692bbc9",
+                "url": "https://api.github.com/repos/leafsphp/blade/zipball/b4a3a5f68af6490bc70b9bb8f6fabbcd1246e732",
+                "reference": "b4a3a5f68af6490bc70b9bb8f6fabbcd1246e732",
                 "shasum": ""
             },
             "require": {
-                "illuminate/view": "^8.0|^9.0|^10.0",
-                "php": ">=7.3|^8.0"
-            },
-            "require-dev": {
-                "pestphp/pest": "^1.0|^2.25"
+                "jenssegers/blade": "^1.4",
+                "php": ">=7.4|^8.0"
             },
             "type": "library",
             "autoload": {
@@ -1817,7 +1875,8 @@
                 "view"
             ],
             "support": {
-                "source": "https://github.com/leafsphp/blade/tree/v2.0.1"
+                "issues": "https://github.com/leafsphp/blade/issues",
+                "source": "https://github.com/leafsphp/blade/tree/v3.1"
             },
             "funding": [
                 {
@@ -1829,20 +1888,20 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-12-11T08:14:34+00:00"
+            "time": "2024-09-23T22:23:29+00:00"
         },
         {
             "name": "leafs/cors",
-            "version": "v1.1.1",
+            "version": "v1.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/cors.git",
-                "reference": "10934a7504879ecf9b6f7687926c22a3b5c02ce9"
+                "reference": "2621ab18fdbefbd152a4390507c913bbce42dcff"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/cors/zipball/10934a7504879ecf9b6f7687926c22a3b5c02ce9",
-                "reference": "10934a7504879ecf9b6f7687926c22a3b5c02ce9",
+                "url": "https://api.github.com/repos/leafsphp/cors/zipball/2621ab18fdbefbd152a4390507c913bbce42dcff",
+                "reference": "2621ab18fdbefbd152a4390507c913bbce42dcff",
                 "shasum": ""
             },
             "require": {
@@ -1878,7 +1937,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/cors/issues",
-                "source": "https://github.com/leafsphp/cors/tree/v1.1.1"
+                "source": "https://github.com/leafsphp/cors/tree/v1.2"
             },
             "funding": [
                 {
@@ -1890,20 +1949,84 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2022-07-25T22:09:52+00:00"
+            "time": "2024-09-27T17:53:12+00:00"
         },
         {
-            "name": "leafs/date",
-            "version": "v2.0",
+            "name": "leafs/csrf",
+            "version": "v0.5.2",
             "source": {
                 "type": "git",
-                "url": "https://github.com/leafsphp/date.git",
-                "reference": "ba85333fd07348f1e06b775d226ec23c991e8285"
+                "url": "https://github.com/leafsphp/csrf.git",
+                "reference": "cd8afdcb949139f51b7075d314e1f60e18d002b1"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/date/zipball/ba85333fd07348f1e06b775d226ec23c991e8285",
-                "reference": "ba85333fd07348f1e06b775d226ec23c991e8285",
+                "url": "https://api.github.com/repos/leafsphp/csrf/zipball/cd8afdcb949139f51b7075d314e1f60e18d002b1",
+                "reference": "cd8afdcb949139f51b7075d314e1f60e18d002b1",
+                "shasum": ""
+            },
+            "require": {
+                "leafs/anchor": "*",
+                "leafs/http": "*",
+                "leafs/session": "*"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/functions.php"
+                ],
+                "psr-4": {
+                    "Leaf\\Anchor\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Michael Darko",
+                    "email": "mickdd22@gmail.com",
+                    "homepage": "https://mychi.netlify.app",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Leaf CSRF security patch for leaf anchor",
+            "homepage": "https://leafphp.netlify.app/#/",
+            "keywords": [
+                "framework",
+                "leaf",
+                "php",
+                "util"
+            ],
+            "support": {
+                "issues": "https://github.com/leafsphp/csrf/issues",
+                "source": "https://github.com/leafsphp/csrf/tree/v0.5.2"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/leafsphp",
+                    "type": "github"
+                },
+                {
+                    "url": "https://opencollective.com/leaf",
+                    "type": "open_collective"
+                }
+            ],
+            "time": "2024-10-10T13:54:41+00:00"
+        },
+        {
+            "name": "leafs/date",
+            "version": "v2.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/leafsphp/date.git",
+                "reference": "9f12bc13cec85ee3f015667d9f9e7913e94dd4ad"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/leafsphp/date/zipball/9f12bc13cec85ee3f015667d9f9e7913e94dd4ad",
+                "reference": "9f12bc13cec85ee3f015667d9f9e7913e94dd4ad",
                 "shasum": ""
             },
             "require-dev": {
@@ -1943,7 +2066,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/date/issues",
-                "source": "https://github.com/leafsphp/date/tree/v2.0"
+                "source": "https://github.com/leafsphp/date/tree/v2.1"
             },
             "funding": [
                 {
@@ -1955,20 +2078,20 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-04-02T18:53:25+00:00"
+            "time": "2024-08-17T05:18:39+00:00"
         },
         {
             "name": "leafs/db",
-            "version": "v2.1.1",
+            "version": "v2.2.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/db.git",
-                "reference": "6d7cad817a524abb898f81a3642e83ba930e8081"
+                "reference": "440f0c1a7792c11c1621b82a378c3342677b15fd"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/db/zipball/6d7cad817a524abb898f81a3642e83ba930e8081",
-                "reference": "6d7cad817a524abb898f81a3642e83ba930e8081",
+                "url": "https://api.github.com/repos/leafsphp/db/zipball/440f0c1a7792c11c1621b82a378c3342677b15fd",
+                "reference": "440f0c1a7792c11c1621b82a378c3342677b15fd",
                 "shasum": ""
             },
             "require-dev": {
@@ -2008,7 +2131,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/db/issues",
-                "source": "https://github.com/leafsphp/db/tree/v2.1.1"
+                "source": "https://github.com/leafsphp/db/tree/v2.2.1"
             },
             "funding": [
                 {
@@ -2020,20 +2143,20 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-08-03T20:59:45+00:00"
+            "time": "2024-09-30T21:13:15+00:00"
         },
         {
             "name": "leafs/exception",
-            "version": "v3.2.2",
+            "version": "v3.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/exceptions.git",
-                "reference": "313a11331b214d7f6d0b566de70e274f9faa9f27"
+                "reference": "74ba10351944d3503f268e111be58308d16d51eb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/exceptions/zipball/313a11331b214d7f6d0b566de70e274f9faa9f27",
-                "reference": "313a11331b214d7f6d0b566de70e274f9faa9f27",
+                "url": "https://api.github.com/repos/leafsphp/exceptions/zipball/74ba10351944d3503f268e111be58308d16d51eb",
+                "reference": "74ba10351944d3503f268e111be58308d16d51eb",
                 "shasum": ""
             },
             "require": {
@@ -2083,7 +2206,7 @@
                 "whoops"
             ],
             "support": {
-                "source": "https://github.com/leafsphp/exceptions/tree/v3.2.2"
+                "source": "https://github.com/leafsphp/exceptions/tree/v3.4"
             },
             "funding": [
                 {
@@ -2091,20 +2214,20 @@
                     "type": "github"
                 }
             ],
-            "time": "2023-08-13T18:32:47+00:00"
+            "time": "2024-08-23T12:20:17+00:00"
         },
         {
             "name": "leafs/fetch",
-            "version": "v0.1",
+            "version": "v0.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/fetch.git",
-                "reference": "f214dda6131c830ed19310dfdfd57a244f5bbd08"
+                "reference": "bc4a568efd36fc32391b811a09e4dacb4044e32b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/fetch/zipball/f214dda6131c830ed19310dfdfd57a244f5bbd08",
-                "reference": "f214dda6131c830ed19310dfdfd57a244f5bbd08",
+                "url": "https://api.github.com/repos/leafsphp/fetch/zipball/bc4a568efd36fc32391b811a09e4dacb4044e32b",
+                "reference": "bc4a568efd36fc32391b811a09e4dacb4044e32b",
                 "shasum": ""
             },
             "require": {
@@ -2112,6 +2235,9 @@
             },
             "type": "library",
             "autoload": {
+                "files": [
+                    "src/functions.php"
+                ],
                 "psr-4": {
                     "Leaf\\": "src"
                 }
@@ -2141,28 +2267,32 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/fetch/issues",
-                "source": "https://github.com/leafsphp/fetch/tree/v0.1"
+                "source": "https://github.com/leafsphp/fetch/tree/v0.2"
             },
             "funding": [
+                {
+                    "url": "https://github.com/leafsphp",
+                    "type": "github"
+                },
                 {
                     "url": "https://opencollective.com/leaf",
                     "type": "open_collective"
                 }
             ],
-            "time": "2021-06-04T17:47:10+00:00"
+            "time": "2024-10-27T21:28:36+00:00"
         },
         {
             "name": "leafs/form",
-            "version": "v2.1",
+            "version": "v2.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/form.git",
-                "reference": "86ecc5c1799b1a26b16cfcff3dbb451f8611ad1e"
+                "reference": "8fb270adcc536dcbb7e0dbf282bbecd43faa69af"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/form/zipball/86ecc5c1799b1a26b16cfcff3dbb451f8611ad1e",
-                "reference": "86ecc5c1799b1a26b16cfcff3dbb451f8611ad1e",
+                "url": "https://api.github.com/repos/leafsphp/form/zipball/8fb270adcc536dcbb7e0dbf282bbecd43faa69af",
+                "reference": "8fb270adcc536dcbb7e0dbf282bbecd43faa69af",
                 "shasum": ""
             },
             "require": {
@@ -2204,7 +2334,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/form/issues",
-                "source": "https://github.com/leafsphp/form/tree/v2.1"
+                "source": "https://github.com/leafsphp/form/tree/v2.2"
             },
             "funding": [
                 {
@@ -2216,20 +2346,20 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-11-12T21:51:53+00:00"
+            "time": "2024-08-25T01:52:17+00:00"
         },
         {
             "name": "leafs/fs",
-            "version": "v1.1",
+            "version": "v1.3.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/fs.git",
-                "reference": "eb046d925abde2e0b6e6d527c5e343b85baddc4a"
+                "reference": "9ce15e17db85f70f90a673b3cb8309f939423abc"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/fs/zipball/eb046d925abde2e0b6e6d527c5e343b85baddc4a",
-                "reference": "eb046d925abde2e0b6e6d527c5e343b85baddc4a",
+                "url": "https://api.github.com/repos/leafsphp/fs/zipball/9ce15e17db85f70f90a673b3cb8309f939423abc",
+                "reference": "9ce15e17db85f70f90a673b3cb8309f939423abc",
                 "shasum": ""
             },
             "require": {
@@ -2268,7 +2398,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/fs/issues",
-                "source": "https://github.com/leafsphp/fs/tree/v1.1"
+                "source": "https://github.com/leafsphp/fs/tree/v1.3.0"
             },
             "funding": [
                 {
@@ -2280,25 +2410,26 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-09-03T22:21:13+00:00"
+            "time": "2024-08-17T05:01:25+00:00"
         },
         {
             "name": "leafs/http",
-            "version": "v2.3.0",
+            "version": "v2.7",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/http.git",
-                "reference": "d54f6dc5c28a4e0c0294c39ebdd05d3c059d86f2"
+                "reference": "7be4caa852cc8b317b9ef8afc34b2ed26d10131c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/http/zipball/d54f6dc5c28a4e0c0294c39ebdd05d3c059d86f2",
-                "reference": "d54f6dc5c28a4e0c0294c39ebdd05d3c059d86f2",
+                "url": "https://api.github.com/repos/leafsphp/http/zipball/7be4caa852cc8b317b9ef8afc34b2ed26d10131c",
+                "reference": "7be4caa852cc8b317b9ef8afc34b2ed26d10131c",
                 "shasum": ""
             },
             "require": {
                 "leafs/anchor": "*",
-                "leafs/form": "*"
+                "leafs/form": "*",
+                "leafs/fs": "*"
             },
             "type": "library",
             "autoload": {
@@ -2334,7 +2465,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/http/issues",
-                "source": "https://github.com/leafsphp/http/tree/v2.3.0"
+                "source": "https://github.com/leafsphp/http/tree/v2.7"
             },
             "funding": [
                 {
@@ -2346,29 +2477,26 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-08-24T22:52:10+00:00"
+            "time": "2024-10-01T16:28:07+00:00"
         },
         {
             "name": "leafs/leaf",
-            "version": "v3.5.0",
+            "version": "v3.7.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/leaf.git",
-                "reference": "47ca4ad59b0c0602c937f79c1c259d2073aa2a7f"
+                "reference": "362352fe3934dcd045371e46eed8ee39b337b840"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/leaf/zipball/47ca4ad59b0c0602c937f79c1c259d2073aa2a7f",
-                "reference": "47ca4ad59b0c0602c937f79c1c259d2073aa2a7f",
+                "url": "https://api.github.com/repos/leafsphp/leaf/zipball/362352fe3934dcd045371e46eed8ee39b337b840",
+                "reference": "362352fe3934dcd045371e46eed8ee39b337b840",
                 "shasum": ""
             },
             "require": {
-                "ext-json": "*",
-                "ext-zip": "*",
                 "leafs/anchor": "*",
                 "leafs/exception": "*",
                 "leafs/http": "*",
-                "leafs/router": "*",
                 "php": "^7.4|^8.0"
             },
             "require-dev": {
@@ -2396,7 +2524,7 @@
                     "role": "Developer"
                 }
             ],
-            "description": "Simple, performant and powerful PHP micro-framework for rapid web app & API development",
+            "description": "Elegant PHP for modern developers",
             "homepage": "https://leafphp.dev",
             "keywords": [
                 "framework",
@@ -2408,7 +2536,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/leaf/issues",
-                "source": "https://github.com/leafsphp/leaf/tree/v3.5.0"
+                "source": "https://github.com/leafsphp/leaf/tree/v3.7.1"
             },
             "funding": [
                 {
@@ -2420,20 +2548,20 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-08-11T18:03:58+00:00"
+            "time": "2024-10-10T13:53:21+00:00"
         },
         {
             "name": "leafs/logger",
-            "version": "v1.3.0",
+            "version": "v1.4.1",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/logger.git",
-                "reference": "aee2379f484148dcff2e64e50807a2b55713b720"
+                "reference": "fbf454d87285110d28d068193e8c6ebca3f4070e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/logger/zipball/aee2379f484148dcff2e64e50807a2b55713b720",
-                "reference": "aee2379f484148dcff2e64e50807a2b55713b720",
+                "url": "https://api.github.com/repos/leafsphp/logger/zipball/fbf454d87285110d28d068193e8c6ebca3f4070e",
+                "reference": "fbf454d87285110d28d068193e8c6ebca3f4070e",
                 "shasum": ""
             },
             "require": {
@@ -2471,7 +2599,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/logger/issues",
-                "source": "https://github.com/leafsphp/logger/tree/v1.3.0"
+                "source": "https://github.com/leafsphp/logger/tree/v1.4.1"
             },
             "funding": [
                 {
@@ -2483,20 +2611,20 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2023-05-17T08:55:26+00:00"
+            "time": "2024-10-19T21:33:22+00:00"
         },
         {
             "name": "leafs/mvc-core",
-            "version": "dev-main",
+            "version": "v1.6.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/mvc-core.git",
-                "reference": "29408df66f0d77081a3dc85823569d8dfd8e02ba"
+                "reference": "57a80133a79b5b5efe4782e116ba5b6a2febd5fd"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/mvc-core/zipball/29408df66f0d77081a3dc85823569d8dfd8e02ba",
-                "reference": "29408df66f0d77081a3dc85823569d8dfd8e02ba",
+                "url": "https://api.github.com/repos/leafsphp/mvc-core/zipball/57a80133a79b5b5efe4782e116ba5b6a2febd5fd",
+                "reference": "57a80133a79b5b5efe4782e116ba5b6a2febd5fd",
                 "shasum": ""
             },
             "require": {
@@ -2506,7 +2634,6 @@
                 "leafs/leaf": "*",
                 "vlucas/phpdotenv": "^5.4"
             },
-            "default-branch": true,
             "type": "library",
             "autoload": {
                 "files": [
@@ -2543,7 +2670,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/mvc-core/issues",
-                "source": "https://github.com/leafsphp/mvc-core/tree/main"
+                "source": "https://github.com/leafsphp/mvc-core/tree/v1.6.0"
             },
             "funding": [
                 {
@@ -2555,7 +2682,7 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2024-07-22T18:57:02+00:00"
+            "time": "2024-10-02T11:30:49+00:00"
         },
         {
             "name": "leafs/password",
@@ -2612,81 +2739,17 @@
             "time": "2021-09-19T12:27:19+00:00"
         },
         {
-            "name": "leafs/router",
-            "version": "v0.2.3",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/leafsphp/router.git",
-                "reference": "d7d66f7e76714885d878e70c7cc2c117d5c998ad"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/router/zipball/d7d66f7e76714885d878e70c7cc2c117d5c998ad",
-                "reference": "d7d66f7e76714885d878e70c7cc2c117d5c998ad",
-                "shasum": ""
-            },
-            "require": {
-                "leafs/anchor": "*",
-                "leafs/http": "*"
-            },
-            "require-dev": {
-                "pestphp/pest": "^1.21"
-            },
-            "type": "library",
-            "autoload": {
-                "psr-4": {
-                    "Leaf\\": "src"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "MIT"
-            ],
-            "authors": [
-                {
-                    "name": "Michael Darko",
-                    "email": "mickdd22@gmail.com",
-                    "homepage": "https://mychi.netlify.app",
-                    "role": "Developer"
-                }
-            ],
-            "description": "Leaf router module for Leaf PHP.",
-            "homepage": "https://leafphp.netlify.app/#/modules/router",
-            "keywords": [
-                "framework",
-                "leaf",
-                "php",
-                "rest",
-                "router"
-            ],
-            "support": {
-                "issues": "https://github.com/leafsphp/router/issues",
-                "source": "https://github.com/leafsphp/router/tree/v0.2.3"
-            },
-            "funding": [
-                {
-                    "url": "https://github.com/leafsphp",
-                    "type": "github"
-                },
-                {
-                    "url": "https://opencollective.com/leaf",
-                    "type": "open_collective"
-                }
-            ],
-            "time": "2023-06-30T09:40:09+00:00"
-        },
-        {
             "name": "leafs/session",
-            "version": "v2.1.0",
+            "version": "v2.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/leafsphp/session.git",
-                "reference": "8cfa0ad3296afd53620e5d97cafa82090746c06c"
+                "reference": "ada264ea5822801699c7c9f5fb5df5851dd2f49b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/leafsphp/session/zipball/8cfa0ad3296afd53620e5d97cafa82090746c06c",
-                "reference": "8cfa0ad3296afd53620e5d97cafa82090746c06c",
+                "url": "https://api.github.com/repos/leafsphp/session/zipball/ada264ea5822801699c7c9f5fb5df5851dd2f49b",
+                "reference": "ada264ea5822801699c7c9f5fb5df5851dd2f49b",
                 "shasum": ""
             },
             "require": {
@@ -2729,7 +2792,7 @@
             ],
             "support": {
                 "issues": "https://github.com/leafsphp/session/issues",
-                "source": "https://github.com/leafsphp/session/tree/v2.1.0"
+                "source": "https://github.com/leafsphp/session/tree/v2.3"
             },
             "funding": [
                 {
@@ -2741,7 +2804,73 @@
                     "type": "open_collective"
                 }
             ],
-            "time": "2024-07-18T17:30:15+00:00"
+            "time": "2024-10-27T21:01:28+00:00"
+        },
+        {
+            "name": "leafs/vite",
+            "version": "v0.3.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/leafsphp/vite.git",
+                "reference": "9e6695db46246c2a940cb98bc71dee004cc8bedb"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/leafsphp/vite/zipball/9e6695db46246c2a940cb98bc71dee004cc8bedb",
+                "reference": "9e6695db46246c2a940cb98bc71dee004cc8bedb",
+                "shasum": ""
+            },
+            "require": {
+                "illuminate/support": "*"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.14"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/functions.php"
+                ],
+                "psr-4": {
+                    "Leaf\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Michael Darko",
+                    "email": "mickdd22@gmail.com",
+                    "homepage": "https://mychi.netlify.app",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Server component for Vite",
+            "homepage": "https://leafphp.dev/modules/views/vite/",
+            "keywords": [
+                "framework",
+                "frontend",
+                "leaf",
+                "php",
+                "vite"
+            ],
+            "support": {
+                "issues": "https://github.com/leafsphp/vite/issues",
+                "source": "https://github.com/leafsphp/vite/tree/v0.3.0"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/leafsphp",
+                    "type": "github"
+                },
+                {
+                    "url": "https://opencollective.com/leaf",
+                    "type": "open_collective"
+                }
+            ],
+            "time": "2024-09-11T17:01:11+00:00"
         },
         {
             "name": "nesbot/carbon",
@@ -2852,16 +2981,16 @@
         },
         {
             "name": "nikic/php-parser",
-            "version": "v4.19.1",
+            "version": "v4.19.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/nikic/PHP-Parser.git",
-                "reference": "4e1b88d21c69391150ace211e9eaf05810858d0b"
+                "reference": "715f4d25e225bc47b293a8b997fe6ce99bf987d2"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/nikic/PHP-Parser/zipball/4e1b88d21c69391150ace211e9eaf05810858d0b",
-                "reference": "4e1b88d21c69391150ace211e9eaf05810858d0b",
+                "url": "https://api.github.com/repos/nikic/PHP-Parser/zipball/715f4d25e225bc47b293a8b997fe6ce99bf987d2",
+                "reference": "715f4d25e225bc47b293a8b997fe6ce99bf987d2",
                 "shasum": ""
             },
             "require": {
@@ -2870,7 +2999,7 @@
             },
             "require-dev": {
                 "ircmaxell/php-yacc": "^0.0.7",
-                "phpunit/phpunit": "^6.5 || ^7.0 || ^8.0 || ^9.0"
+                "phpunit/phpunit": "^7.0 || ^8.0 || ^9.0"
             },
             "bin": [
                 "bin/php-parse"
@@ -2902,9 +3031,9 @@
             ],
             "support": {
                 "issues": "https://github.com/nikic/PHP-Parser/issues",
-                "source": "https://github.com/nikic/PHP-Parser/tree/v4.19.1"
+                "source": "https://github.com/nikic/PHP-Parser/tree/v4.19.4"
             },
-            "time": "2024-03-17T08:10:35+00:00"
+            "time": "2024-09-29T15:01:53+00:00"
         },
         {
             "name": "phpoption/phpoption",
@@ -3513,16 +3642,16 @@
         },
         {
             "name": "symfony/console",
-            "version": "v5.4.42",
+            "version": "v5.4.46",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/console.git",
-                "reference": "cef62396a0477e94fc52e87a17c6e5c32e226b7f"
+                "reference": "fb0d4760e7147d81ab4d9e2d57d56268261b4e4e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/console/zipball/cef62396a0477e94fc52e87a17c6e5c32e226b7f",
-                "reference": "cef62396a0477e94fc52e87a17c6e5c32e226b7f",
+                "url": "https://api.github.com/repos/symfony/console/zipball/fb0d4760e7147d81ab4d9e2d57d56268261b4e4e",
+                "reference": "fb0d4760e7147d81ab4d9e2d57d56268261b4e4e",
                 "shasum": ""
             },
             "require": {
@@ -3592,7 +3721,7 @@
                 "terminal"
             ],
             "support": {
-                "source": "https://github.com/symfony/console/tree/v5.4.42"
+                "source": "https://github.com/symfony/console/tree/v5.4.46"
             },
             "funding": [
                 {
@@ -3608,7 +3737,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-07-26T12:21:55+00:00"
+            "time": "2024-11-05T14:17:06+00:00"
         },
         {
             "name": "symfony/deprecation-contracts",
@@ -3679,16 +3808,16 @@
         },
         {
             "name": "symfony/finder",
-            "version": "v5.4.42",
+            "version": "v5.4.45",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/finder.git",
-                "reference": "0724c51fa067b198e36506d2864e09a52180998a"
+                "reference": "63741784cd7b9967975eec610b256eed3ede022b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/finder/zipball/0724c51fa067b198e36506d2864e09a52180998a",
-                "reference": "0724c51fa067b198e36506d2864e09a52180998a",
+                "url": "https://api.github.com/repos/symfony/finder/zipball/63741784cd7b9967975eec610b256eed3ede022b",
+                "reference": "63741784cd7b9967975eec610b256eed3ede022b",
                 "shasum": ""
             },
             "require": {
@@ -3722,7 +3851,7 @@
             "description": "Finds files and directories via an intuitive fluent interface",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/finder/tree/v5.4.42"
+                "source": "https://github.com/symfony/finder/tree/v5.4.45"
             },
             "funding": [
                 {
@@ -3738,24 +3867,24 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-07-22T08:53:29+00:00"
+            "time": "2024-09-28T13:32:08+00:00"
         },
         {
             "name": "symfony/polyfill-ctype",
-            "version": "v1.30.0",
+            "version": "v1.31.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-ctype.git",
-                "reference": "0424dff1c58f028c451efff2045f5d92410bd540"
+                "reference": "a3cc8b044a6ea513310cbd48ef7333b384945638"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-ctype/zipball/0424dff1c58f028c451efff2045f5d92410bd540",
-                "reference": "0424dff1c58f028c451efff2045f5d92410bd540",
+                "url": "https://api.github.com/repos/symfony/polyfill-ctype/zipball/a3cc8b044a6ea513310cbd48ef7333b384945638",
+                "reference": "a3cc8b044a6ea513310cbd48ef7333b384945638",
                 "shasum": ""
             },
             "require": {
-                "php": ">=7.1"
+                "php": ">=7.2"
             },
             "provide": {
                 "ext-ctype": "*"
@@ -3801,7 +3930,7 @@
                 "portable"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-ctype/tree/v1.30.0"
+                "source": "https://github.com/symfony/polyfill-ctype/tree/v1.31.0"
             },
             "funding": [
                 {
@@ -3817,24 +3946,24 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-05-31T15:07:36+00:00"
+            "time": "2024-09-09T11:45:10+00:00"
         },
         {
             "name": "symfony/polyfill-intl-grapheme",
-            "version": "v1.30.0",
+            "version": "v1.31.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-intl-grapheme.git",
-                "reference": "64647a7c30b2283f5d49b874d84a18fc22054b7a"
+                "reference": "b9123926e3b7bc2f98c02ad54f6a4b02b91a8abe"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-intl-grapheme/zipball/64647a7c30b2283f5d49b874d84a18fc22054b7a",
-                "reference": "64647a7c30b2283f5d49b874d84a18fc22054b7a",
+                "url": "https://api.github.com/repos/symfony/polyfill-intl-grapheme/zipball/b9123926e3b7bc2f98c02ad54f6a4b02b91a8abe",
+                "reference": "b9123926e3b7bc2f98c02ad54f6a4b02b91a8abe",
                 "shasum": ""
             },
             "require": {
-                "php": ">=7.1"
+                "php": ">=7.2"
             },
             "suggest": {
                 "ext-intl": "For best performance"
@@ -3879,7 +4008,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-intl-grapheme/tree/v1.30.0"
+                "source": "https://github.com/symfony/polyfill-intl-grapheme/tree/v1.31.0"
             },
             "funding": [
                 {
@@ -3895,24 +4024,24 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-05-31T15:07:36+00:00"
+            "time": "2024-09-09T11:45:10+00:00"
         },
         {
             "name": "symfony/polyfill-intl-normalizer",
-            "version": "v1.30.0",
+            "version": "v1.31.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-intl-normalizer.git",
-                "reference": "a95281b0be0d9ab48050ebd988b967875cdb9fdb"
+                "reference": "3833d7255cc303546435cb650316bff708a1c75c"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-intl-normalizer/zipball/a95281b0be0d9ab48050ebd988b967875cdb9fdb",
-                "reference": "a95281b0be0d9ab48050ebd988b967875cdb9fdb",
+                "url": "https://api.github.com/repos/symfony/polyfill-intl-normalizer/zipball/3833d7255cc303546435cb650316bff708a1c75c",
+                "reference": "3833d7255cc303546435cb650316bff708a1c75c",
                 "shasum": ""
             },
             "require": {
-                "php": ">=7.1"
+                "php": ">=7.2"
             },
             "suggest": {
                 "ext-intl": "For best performance"
@@ -3960,7 +4089,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-intl-normalizer/tree/v1.30.0"
+                "source": "https://github.com/symfony/polyfill-intl-normalizer/tree/v1.31.0"
             },
             "funding": [
                 {
@@ -3976,24 +4105,24 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-05-31T15:07:36+00:00"
+            "time": "2024-09-09T11:45:10+00:00"
         },
         {
             "name": "symfony/polyfill-mbstring",
-            "version": "v1.30.0",
+            "version": "v1.31.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-mbstring.git",
-                "reference": "fd22ab50000ef01661e2a31d850ebaa297f8e03c"
+                "reference": "85181ba99b2345b0ef10ce42ecac37612d9fd341"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-mbstring/zipball/fd22ab50000ef01661e2a31d850ebaa297f8e03c",
-                "reference": "fd22ab50000ef01661e2a31d850ebaa297f8e03c",
+                "url": "https://api.github.com/repos/symfony/polyfill-mbstring/zipball/85181ba99b2345b0ef10ce42ecac37612d9fd341",
+                "reference": "85181ba99b2345b0ef10ce42ecac37612d9fd341",
                 "shasum": ""
             },
             "require": {
-                "php": ">=7.1"
+                "php": ">=7.2"
             },
             "provide": {
                 "ext-mbstring": "*"
@@ -4040,7 +4169,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-mbstring/tree/v1.30.0"
+                "source": "https://github.com/symfony/polyfill-mbstring/tree/v1.31.0"
             },
             "funding": [
                 {
@@ -4056,24 +4185,24 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-06-19T12:30:46+00:00"
+            "time": "2024-09-09T11:45:10+00:00"
         },
         {
             "name": "symfony/polyfill-php73",
-            "version": "v1.30.0",
+            "version": "v1.31.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-php73.git",
-                "reference": "ec444d3f3f6505bb28d11afa41e75faadebc10a1"
+                "reference": "0f68c03565dcaaf25a890667542e8bd75fe7e5bb"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-php73/zipball/ec444d3f3f6505bb28d11afa41e75faadebc10a1",
-                "reference": "ec444d3f3f6505bb28d11afa41e75faadebc10a1",
+                "url": "https://api.github.com/repos/symfony/polyfill-php73/zipball/0f68c03565dcaaf25a890667542e8bd75fe7e5bb",
+                "reference": "0f68c03565dcaaf25a890667542e8bd75fe7e5bb",
                 "shasum": ""
             },
             "require": {
-                "php": ">=7.1"
+                "php": ">=7.2"
             },
             "type": "library",
             "extra": {
@@ -4116,7 +4245,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-php73/tree/v1.30.0"
+                "source": "https://github.com/symfony/polyfill-php73/tree/v1.31.0"
             },
             "funding": [
                 {
@@ -4132,24 +4261,24 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-05-31T15:07:36+00:00"
+            "time": "2024-09-09T11:45:10+00:00"
         },
         {
             "name": "symfony/polyfill-php80",
-            "version": "v1.30.0",
+            "version": "v1.31.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-php80.git",
-                "reference": "77fa7995ac1b21ab60769b7323d600a991a90433"
+                "reference": "60328e362d4c2c802a54fcbf04f9d3fb892b4cf8"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-php80/zipball/77fa7995ac1b21ab60769b7323d600a991a90433",
-                "reference": "77fa7995ac1b21ab60769b7323d600a991a90433",
+                "url": "https://api.github.com/repos/symfony/polyfill-php80/zipball/60328e362d4c2c802a54fcbf04f9d3fb892b4cf8",
+                "reference": "60328e362d4c2c802a54fcbf04f9d3fb892b4cf8",
                 "shasum": ""
             },
             "require": {
-                "php": ">=7.1"
+                "php": ">=7.2"
             },
             "type": "library",
             "extra": {
@@ -4196,7 +4325,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-php80/tree/v1.30.0"
+                "source": "https://github.com/symfony/polyfill-php80/tree/v1.31.0"
             },
             "funding": [
                 {
@@ -4212,20 +4341,20 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-05-31T15:07:36+00:00"
+            "time": "2024-09-09T11:45:10+00:00"
         },
         {
             "name": "symfony/process",
-            "version": "v5.4.40",
+            "version": "v5.4.46",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/process.git",
-                "reference": "deedcb3bb4669cae2148bc920eafd2b16dc7c046"
+                "reference": "01906871cb9b5e3cf872863b91aba4ec9767daf4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/process/zipball/deedcb3bb4669cae2148bc920eafd2b16dc7c046",
-                "reference": "deedcb3bb4669cae2148bc920eafd2b16dc7c046",
+                "url": "https://api.github.com/repos/symfony/process/zipball/01906871cb9b5e3cf872863b91aba4ec9767daf4",
+                "reference": "01906871cb9b5e3cf872863b91aba4ec9767daf4",
                 "shasum": ""
             },
             "require": {
@@ -4258,7 +4387,7 @@
             "description": "Executes commands in sub-processes",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/process/tree/v5.4.40"
+                "source": "https://github.com/symfony/process/tree/v5.4.46"
             },
             "funding": [
                 {
@@ -4274,7 +4403,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-05-31T14:33:22+00:00"
+            "time": "2024-11-06T09:18:28+00:00"
         },
         {
             "name": "symfony/service-contracts",
@@ -4361,16 +4490,16 @@
         },
         {
             "name": "symfony/string",
-            "version": "v6.4.10",
+            "version": "v6.4.13",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/string.git",
-                "reference": "ccf9b30251719567bfd46494138327522b9a9446"
+                "reference": "38371c60c71c72b3d64d8d76f6b1bb81a2cc3627"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/string/zipball/ccf9b30251719567bfd46494138327522b9a9446",
-                "reference": "ccf9b30251719567bfd46494138327522b9a9446",
+                "url": "https://api.github.com/repos/symfony/string/zipball/38371c60c71c72b3d64d8d76f6b1bb81a2cc3627",
+                "reference": "38371c60c71c72b3d64d8d76f6b1bb81a2cc3627",
                 "shasum": ""
             },
             "require": {
@@ -4427,7 +4556,7 @@
                 "utf8"
             ],
             "support": {
-                "source": "https://github.com/symfony/string/tree/v6.4.10"
+                "source": "https://github.com/symfony/string/tree/v6.4.13"
             },
             "funding": [
                 {
@@ -4443,20 +4572,20 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-07-22T10:21:14+00:00"
+            "time": "2024-09-25T14:18:03+00:00"
         },
         {
             "name": "symfony/translation",
-            "version": "v6.4.10",
+            "version": "v6.4.13",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/translation.git",
-                "reference": "94041203f8ac200ae9e7c6a18fa6137814ccecc9"
+                "reference": "bee9bfabfa8b4045a66bf82520e492cddbaffa66"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/translation/zipball/94041203f8ac200ae9e7c6a18fa6137814ccecc9",
-                "reference": "94041203f8ac200ae9e7c6a18fa6137814ccecc9",
+                "url": "https://api.github.com/repos/symfony/translation/zipball/bee9bfabfa8b4045a66bf82520e492cddbaffa66",
+                "reference": "bee9bfabfa8b4045a66bf82520e492cddbaffa66",
                 "shasum": ""
             },
             "require": {
@@ -4522,7 +4651,7 @@
             "description": "Provides tools to internationalize your application",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/translation/tree/v6.4.10"
+                "source": "https://github.com/symfony/translation/tree/v6.4.13"
             },
             "funding": [
                 {
@@ -4538,7 +4667,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-07-26T12:30:32+00:00"
+            "time": "2024-09-27T18:14:25+00:00"
         },
         {
             "name": "symfony/translation-contracts",
@@ -4620,16 +4749,16 @@
         },
         {
             "name": "symfony/var-dumper",
-            "version": "v6.4.10",
+            "version": "v6.4.14",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/var-dumper.git",
-                "reference": "a71cc3374f5fb9759da1961d28c452373b343dd4"
+                "reference": "93c09246038178717a9c14b809ea8151ffcf7091"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/var-dumper/zipball/a71cc3374f5fb9759da1961d28c452373b343dd4",
-                "reference": "a71cc3374f5fb9759da1961d28c452373b343dd4",
+                "url": "https://api.github.com/repos/symfony/var-dumper/zipball/93c09246038178717a9c14b809ea8151ffcf7091",
+                "reference": "93c09246038178717a9c14b809ea8151ffcf7091",
                 "shasum": ""
             },
             "require": {
@@ -4685,7 +4814,7 @@
                 "dump"
             ],
             "support": {
-                "source": "https://github.com/symfony/var-dumper/tree/v6.4.10"
+                "source": "https://github.com/symfony/var-dumper/tree/v6.4.14"
             },
             "funding": [
                 {
@@ -4701,7 +4830,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2024-07-26T12:30:32+00:00"
+            "time": "2024-11-05T15:34:40+00:00"
         },
         {
             "name": "vlucas/phpdotenv",
@@ -4929,13 +5058,10 @@
     ],
     "aliases": [],
     "minimum-stability": "dev",
-    "stability-flags": {
-        "leafs/aloe": 20,
-        "leafs/mvc-core": 20
-    },
+    "stability-flags": {},
     "prefer-stable": true,
     "prefer-lowest": false,
-    "platform": [],
-    "platform-dev": [],
+    "platform": {},
+    "platform-dev": {},
     "plugin-api-version": "2.6.0"
 }
