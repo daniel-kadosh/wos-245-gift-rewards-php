@@ -48,6 +48,10 @@ class WosController extends Controller {
             'signinErrorCodes'  => 'signinErrorCodes',
             'giftErrorCodes'    => 'giftErrorCodes',
         ];
+    const HOST2ALLIANCE = [
+            'VHL'   => ['vhl', 'vhl245', 'valhalla245'],
+            'Tea'   => ['tea', 'tea245']
+        ];
     private $time = null;   // tick() DateTime object
     private $guz;           // Guzzle HTTP client object
     private $stats;         // giftCodeStatistics object
@@ -63,16 +67,25 @@ class WosController extends Controller {
         // Init the framework
         parent::__construct();
         $this->request = new Request;
-        db()->autoConnect();
-        $this->guz = new Client(['timeout'=>10]); // Guzzle outbound HTTP client
+
+        // Determine OUR_ALLIANCE from URL hostname (1st string in FQDN)
+        $fqdn_parts = explode('.', strtolower($_SERVER['HTTP_HOST']));
+        $this->our_alliance = array_keys(self::HOST2ALLIANCE)[0];
+        foreach (self::HOST2ALLIANCE as $alliance => $hostnames) {
+            if ( in_array($fqdn_parts[0], $hostnames) ) {
+                $this->our_alliance = $alliance;
+                break;
+            }
+        }
 
         // Pull environment variables from .env file, with some default settings if not found
         $this->dbg          = strcasecmp(trim(_env('APP_DEBUG'),''),'true') == 0;
         $this->guzEmulate   = strcasecmp(trim(_env('GUZZLE_EMULATE','')),'true') == 0;
         $this->dataDir      = _env('LOG_DIR', __DIR__.'/../../wos245/');
-        // $_SERVER['OUR_ALLIANCE']	inherits from Apache SetEnv directive in vhost
-        $this->our_alliance = _env('OUR_ALLIANCE', 'VHL');
         $this->our_state    = _env('OUR_STATE', 245);
+
+        db()->autoConnect();
+        $this->guz = new Client(['timeout'=>10]); // Guzzle outbound HTTP client
 
         // Set up logger
         Config::set('log.style','linux');
@@ -128,6 +141,7 @@ class WosController extends Controller {
             );
         $this->p( trim(file_get_contents('git-info')) ,'pre' ,true);
         $this->p('</td></tr></table>');
+        #phpinfo(INFO_ALL);
         $this->htmlFooter();
     }
 
@@ -801,7 +815,7 @@ class WosController extends Controller {
      */
     public function giftcodes() {
         $this->htmlHeader('== Sent Giftcode List');
-        $this->p('This is a summary of gift codes sent in the past','p');
+        $this->p('This is a summary of the last 10 gift codes sent in the past','p');
         $this->p('<table><tr>');
         foreach (array_keys(self::GIFTCODE_COLUMNS) as $colName) {
             $this->p("<u>$colName</u>",'th');
@@ -811,7 +825,7 @@ class WosController extends Controller {
             $allGiftcodes = db()
                 ->select('giftcodes')
                 ->orderBy('id','desc')
-                ->limit(50)
+                ->limit(10)
                 ->all();
             $stats = new giftcodeStatistics();
             foreach ($allGiftcodes as $a) {
