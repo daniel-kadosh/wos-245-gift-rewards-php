@@ -107,11 +107,11 @@ class WosController extends Controller {
         $this->logInfo( '=== '.$this->request->getUrl().$_SERVER['REQUEST_URI'].'  user='.$_SERVER['REMOTE_USER'] );
 
         # Database, Guzzle
-        Config::set('db.database', sprintf('%s-%s/gift-rewards.db',$base_data_dir, strtolower($this->our_alliance)) );
-        $dbfile = Config::get('db.database');
+        $dbfile = sprintf('%s-%s/gift-rewards.db',$base_data_dir, strtolower($this->our_alliance));
+        putenv("DB_DATABASE=$dbfile");
         db()->autoConnect();
         $this->guz = new Client(['timeout'=>10]); // Guzzle outbound HTTP client
-        #print "<pre>\nDBFILE=$dbfile\n\n";
+        #print "<pre>DBFILE=$dbfile\n</pre>";
         #phpinfo(INFO_ALL);
     }
 
@@ -1751,7 +1751,7 @@ Body3:
         $this->p('<b>|</b> <a href="/players">Players</a>','td');
         $this->p('<b>|</b> <a href="/giftcodes">Giftcodes</a>','td');
         $this->p('<b>|</b> <a href="/download">Download</a>','td');
-        $this->p('<td width="5">&nbsp;</td>');
+        $this->p('</tr></table><table></tr>');
         $this->p($this->menuForm('Add','player ID','','['.$this->our_alliance.'] '),'td');
         $this->p($this->menuForm('Remove','player ID','',' <b>||</b> '),'td');
         $this->p($this->menuForm('Send','gift code','Send Giftcode',' <b>||</b> '),'td');
