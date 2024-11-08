@@ -48,10 +48,6 @@ class WosController extends Controller {
             'signinErrorCodes'  => 'signinErrorCodes',
             'giftErrorCodes'    => 'giftErrorCodes',
         ];
-    const HOST2ALLIANCE = [
-            'VHL'   => ['vhl', 'vhl245', 'valhalla245'],
-            'Tea'   => ['tea', 'tea245']
-        ];
     private $time = null;   // tick() DateTime object
     private $guz;           // Guzzle HTTP client object
     private $stats;         // giftCodeStatistics object
@@ -68,10 +64,22 @@ class WosController extends Controller {
         parent::__construct();
         $this->request = new Request;
 
+
         // Determine OUR_ALLIANCE from URL hostname (1st string in FQDN)
+        $this->our_state= _env('OUR_STATE', 245);
+        $alliances      = explode(',',_env('ALLIANCES',     'VHL'));      // 3-letter names
+        $alliancesLong  = explode(',',_env('ALLIANCES_LONG','Valhalla')); // long names
+        for ($i=0; $i<count($alliances); $i++) {
+            $host2Alliance[$alliances[$i]] = [
+                strtolower($alliances[$i]),
+                strtolower($alliances[$i]).$this->our_state,
+                strtolower($alliancesLong[$i]),
+                strtolower($alliancesLong[$i]).$this->our_state,
+            ];
+        }
         $fqdn_parts = explode('.', strtolower($_SERVER['HTTP_HOST']));
-        $this->our_alliance = array_keys(self::HOST2ALLIANCE)[0];
-        foreach (self::HOST2ALLIANCE as $alliance => $hostnames) {
+        $this->our_alliance = array_keys($host2Alliance)[0];
+        foreach ($host2Alliance as $alliance => $hostnames) {
             if ( in_array($fqdn_parts[0], $hostnames) ) {
                 $this->our_alliance = $alliance;
                 break;
@@ -79,13 +87,10 @@ class WosController extends Controller {
         }
 
         // Pull environment variables from .env file, with some default settings if not found
-        $this->dbg          = strcasecmp(trim(_env('APP_DEBUG'),''),'true') == 0;
-        $this->guzEmulate   = strcasecmp(trim(_env('GUZZLE_EMULATE','')),'true') == 0;
-        $this->dataDir      = _env('LOG_DIR', __DIR__.'/../../wos245/');
-        $this->our_state    = _env('OUR_STATE', 245);
-
-        db()->autoConnect();
-        $this->guz = new Client(['timeout'=>10]); // Guzzle outbound HTTP client
+        $this->dbg          = strcasecmp(_env('APP_DEBUG',''),     'true') == 0;
+        $this->guzEmulate   = strcasecmp(_env('GUZZLE_EMULATE',''),'true') == 0;
+        $base_data_dir      = _env('BASE_DATA_DIR', __DIR__.'/../../wos245');
+        $this->dataDir      = sprintf('%s-%s/',$base_data_dir, strtolower($this->our_alliance));
 
         // Set up logger
         Config::set('log.style','linux');
@@ -94,7 +99,20 @@ class WosController extends Controller {
             substr($this->getTimestring(false,false),0,7).'.log');
         $this->log = app()->logger();
         $this->log->level( $this->dbg ? Log::DEBUG : Log::INFO );
+
+        if ( empty($_SERVER['REMOTE_USER']) ) {
+            # If Apache's digest auth didn't set REMOTE_USER, we have no auth
+            $this->pExit('Auth failure, misconfiguration?',403);
+        }
         $this->logInfo( '=== '.$this->request->getUrl().$_SERVER['REQUEST_URI'].'  user='.$_SERVER['REMOTE_USER'] );
+
+        # Database, Guzzle
+        Config::set('db.database', sprintf('%s-%s/gift-rewards.db',$base_data_dir, strtolower($this->our_alliance)) );
+        $dbfile = Config::get('db.database');
+        db()->autoConnect();
+        $this->guz = new Client(['timeout'=>10]); // Guzzle outbound HTTP client
+        #print "<pre>\nDBFILE=$dbfile\n\n";
+        #phpinfo(INFO_ALL);
     }
 
     /**
@@ -141,7 +159,6 @@ class WosController extends Controller {
             );
         $this->p( trim(file_get_contents('git-info')) ,'pre' ,true);
         $this->p('</td></tr></table>');
-        #phpinfo(INFO_ALL);
         $this->htmlFooter();
     }
 
@@ -1724,8 +1741,8 @@ Body3:
         $this->p('</head><body style="background-color:#D3D3D3;">');
         $this->p("WOS #245 Gift Rewards",'h1');
         if ( $this->dbg || $this->guzEmulate ) {
-            $this->p('Default alliance='.$this->our_alliance.' state #'.$this->our_state."\n".
-                    __CLASS__.': dbg='.($this->dbg?1:0).' guzEmulate='.($this->guzEmulate?1:0),'pre',true);
+            $this->p('Default alliance='.$this->our_alliance.' state #'.$this->our_state.' dataDir='.$this->dataDir.
+                        "\n".__CLASS__.': dbg='.($this->dbg?1:0).' guzEmulate='.($this->guzEmulate?1:0),'pre',true);
         }
 
         $this->p('<table><tr>');

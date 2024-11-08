@@ -1,8 +1,12 @@
 #!/bin/bash
 
+APACHE_AUTH_FILE=apache-auth
+DOCKER_APP_NAME=wos245-app
 ENV=production
 CMD=""
 HTUSER=""
+### NOT implementing realm stuff yet, to keep things simpler
+HTREALM="wos245"
 
 function usage() {
     echo "Usage:
@@ -15,6 +19,7 @@ $0 -a|-o|-r|(-u username) [-p|-d]
 Container must be running for these tools:
 -b start Bash shell inside running container, for debugging
 -u create User (or change user's password) for Apache digest auth
+   ## Requires -l REALM, as an alliance name like 'vhl'
 
 Environment defaults to ${ENV}, and these only apply to -r and -a:
 -p set to Production environment
@@ -23,7 +28,7 @@ Environment defaults to ${ENV}, and these only apply to -r and -a:
     exit 1
 }
 
-OPSTRING=":aorbpdu:"
+OPSTRING=":aorbpdl:u:"
 while getopts ${OPSTRING} opt; do
     case ${opt} in
         a)  CMD=wos-start
@@ -37,6 +42,9 @@ while getopts ${OPSTRING} opt; do
         p)  ENV=production
             ;;
         d)  ENV=dev
+            ;;
+        l)  CMD=wos-user
+#            HTREALM="${OPTARG,,}"
             ;;
         u)  CMD=wos-user
             HTUSER=${OPTARG}
@@ -52,9 +60,6 @@ if [[ -z "${CMD}" ]] then
     usage
 fi
 
-APACHE_AUTH_FILE=wos245/apache-auth
-SQLITE_FILE=wos245/gift-rewards.db
-DOCKER_APP_NAME=wos245-app
 # For Linux, docker commands run under sudo
 # while for some things in Windows a "real tty" is needed
 CMD_PREFIX="sudo"
@@ -75,9 +80,6 @@ function wos-start() {
         OPT="--detach"
     fi
     set -x
-    # Ensure we have an SQLite3 database file
-    touch ${SQLITE_FILE}
-    chmod 666 ${SQLITE_FILE}
     cp -f .env.${ENV} .env
     ${CMD_PREFIX} docker compose up --remove-orphans $OPT
 }
@@ -110,12 +112,17 @@ function wos-bash() {
 
 function wos-user() {
     echo "Creating user for Apache digest auth"
+    if [[ -z "${HTUSER}" || -z "${HTREALM}" ]]; then
+        echo "ABORT: Need both '-u USER' and '-l REALM' (alliance 3-letter)"
+        exit -1
+    fi
+
     OPT=""
     if [[ ! -f ${APACHE_AUTH_FILE} ]]; then
         OPT="-c"
     fi
     set -x
-    ${CMD_PREFIX} docker compose exec ${DOCKER_APP_NAME} htdigest ${OPT} ${APACHE_AUTH_FILE} wos245 ${HTUSER}
+    ${CMD_PREFIX} docker compose exec ${DOCKER_APP_NAME} htdigest ${OPT} ${APACHE_AUTH_FILE} ${HTREALM} ${HTUSER}
     echo "== Resulting Apache digest auth file:"
     cat ${APACHE_AUTH_FILE}
 }
