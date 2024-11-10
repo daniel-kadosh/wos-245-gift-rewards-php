@@ -11,3 +11,5 @@ npm-debug.log
 yarn-error.log
 *.code-workspace
 wos245/[a-z]*
+wos245-*
+apache-auth

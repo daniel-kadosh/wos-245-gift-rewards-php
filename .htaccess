@@ -1,9 +1,17 @@
+# This is NOT used AFAIK, just from Leaf for some dev configuration
+
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
     </IfModule>
 
     RewriteEngine On
+
+    # prevent http access to .env
+    <Files ".env">
+        Order Allow,Deny
+        Deny from all
+    </Files>
 
     # Handle Authorization Header
     RewriteCond %{HTTP:Authorization} .

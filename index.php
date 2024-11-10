@@ -2,14 +2,14 @@
 
 /*
 |--------------------------------------------------------------------------
-| Leaf API
+| Leaf MVC
 |--------------------------------------------------------------------------
 |
-| Leaf API is a minimal but powerful PHP MVC framework based on
-| the Leaf PHP framework for building APIs.
+| Leaf MVC is a minimal but powerful PHP MVC framework based on
+| the Leaf PHP framework.
 |
 | This file allows us to run the app from the root of the project.
-| This provides a convenient way to test your Leaf API app
+| This provides a convenient way to test your Leaf MVC app
 | without having installed a "real" web server software here.
 |
 | It also allows you to directly load up your application from

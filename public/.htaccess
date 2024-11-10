@@ -22,5 +22,5 @@
 
 AuthType Digest
 AuthName "wos245"
-AuthUserFile "/var/www/wos245/apache-auth"
 Require valid-user
+AuthUserFile "/var/www/apache-auth"

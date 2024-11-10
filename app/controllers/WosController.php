@@ -11,8 +11,6 @@ use PDOException;
 
 class WosController extends Controller {
     const HASH          = "tB87#kPtkxqOS2"; // WOS API secret
-    const OUR_STATE     = 245;              // State number restriction
-    const OUR_ALLIANCE  = 'VHL';
     const DIGEST_REALM  = 'wos245';         // Apache digest auth realm
     const LIST_COLUMNS  = [                 // Column labels to DB field names
             'ID'                => 'id',
@@ -58,15 +56,41 @@ class WosController extends Controller {
     private $guzEmulate;    // boolean: true if GUZZLE_EMULATE to not make WOS API calls
     private $badResponsesLeft;  // Number of questionable bad responses from WOS API before abort
     private $dataDir;       // For a number of files used by the app or Apache
+    private $our_alliance;  // 3-letter alliance name
+    private $our_state;     // WOS state number
 
     public function __construct() {
+        // Init the framework
         parent::__construct();
         $this->request = new Request;
-        db()->autoConnect();
-        $this->guz = new Client(['timeout'=>10]);
-        $this->dbg = ( _env('APP_DEBUG')=='true' );
-        $this->guzEmulate = ( _env('GUZZLE_EMULATE')=='true' );
-        $this->dataDir = _env('LOG_DIR', __DIR__.'/../../wos245/');
+
+
+        // Determine OUR_ALLIANCE from URL hostname (1st string in FQDN)
+        $this->our_state= _env('OUR_STATE', 245);
+        $alliances      = explode(',',_env('ALLIANCES',     'VHL'));      // 3-letter names
+        $alliancesLong  = explode(',',_env('ALLIANCES_LONG','Valhalla')); // long names
+        for ($i=0; $i<count($alliances); $i++) {
+            $host2Alliance[$alliances[$i]] = [
+                strtolower($alliances[$i]),
+                strtolower($alliances[$i]).$this->our_state,
+                strtolower($alliancesLong[$i]),
+                strtolower($alliancesLong[$i]).$this->our_state,
+            ];
+        }
+        $fqdn_parts = explode('.', strtolower($_SERVER['HTTP_HOST']));
+        $this->our_alliance = array_keys($host2Alliance)[0];
+        foreach ($host2Alliance as $alliance => $hostnames) {
+            if ( in_array($fqdn_parts[0], $hostnames) ) {
+                $this->our_alliance = $alliance;
+                break;
+            }
+        }
+
+        // Pull environment variables from .env file, with some default settings if not found
+        $this->dbg          = strcasecmp(_env('APP_DEBUG',''),     'true') == 0;
+        $this->guzEmulate   = strcasecmp(_env('GUZZLE_EMULATE',''),'true') == 0;
+        $base_data_dir      = _env('BASE_DATA_DIR', __DIR__.'/../../wos245');
+        $this->dataDir      = sprintf('%s-%s/',$base_data_dir, strtolower($this->our_alliance));
 
         // Set up logger
         Config::set('log.style','linux');
@@ -75,7 +99,20 @@ class WosController extends Controller {
             substr($this->getTimestring(false,false),0,7).'.log');
         $this->log = app()->logger();
         $this->log->level( $this->dbg ? Log::DEBUG : Log::INFO );
+
+        if ( empty($_SERVER['REMOTE_USER']) ) {
+            # If Apache's digest auth didn't set REMOTE_USER, we have no auth
+            $this->pExit('Auth failure, misconfiguration?',403);
+        }
         $this->logInfo( '=== '.$this->request->getUrl().$_SERVER['REQUEST_URI'].'  user='.$_SERVER['REMOTE_USER'] );
+
+        # Database, Guzzle
+        $dbfile = sprintf('%s-%s/gift-rewards.db',$base_data_dir, strtolower($this->our_alliance));
+        putenv("DB_DATABASE=$dbfile");
+        db()->autoConnect();
+        $this->guz = new Client(['timeout'=>10]); // Guzzle outbound HTTP client
+        #print "<pre>DBFILE=$dbfile\n</pre>";
+        #phpinfo(INFO_ALL);
     }
 
     /**
@@ -94,10 +131,10 @@ class WosController extends Controller {
             'Send a reward','to send ALL players the giftcode if they don\'t have it yet.'.
             '<br/><b>NOTE:</b> page will take 2-5 minutes to show anything, let it run and wait!'.
             '<br/>Player will be verified with WOS and <b>DELETED</b> if not found or not in state #'.
-            self::OUR_STATE.'.'),'tr');
+            $this->our_state.'.'),'tr');
         $this->p(sprintf($lineFormat,'add/','add/','[playerID]',
-            'Add a player','Will get basic player info from WOS and check they are in state #'.self::OUR_STATE.
-            '.<br/>By default will add in alliance ['.self::OUR_ALLIANCE.'] but you can change afterwards.'),'tr');
+            'Add a player','Will get basic player info from WOS and check they are in state #'.$this->our_state.
+            '.<br/>By default will add in alliance ['.$this->our_alliance.'] but you can change afterwards.'),'tr');
         $this->p(sprintf($lineFormat,'remove/','remove/','[playerID]',
             'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
         $this->p(sprintf($lineFormat,'updateFromWOS/','updateFromWOS/','[playerID|ignore]',
@@ -178,7 +215,6 @@ class WosController extends Controller {
         $this->htmlHeader('== Add Alliance');
         $allianceData = ['id' => null];
         $this->validateAllianceData($allianceData);
-
         $short_name = $allianceData['short_name'];
         $this->p("Adding alliance name=<b>$short_name</b>",'p',true);
         try {
@@ -277,7 +313,7 @@ class WosController extends Controller {
         }
 
         // Filters for list
-        $urlParams = request()->params();
+        $urlParams = request()->try(['sort','dir','alliance_id','ignore'],true);
         unset ($urlParams[0]);
         $this->p('<table><tr><form>');
         $sortParams = array_intersect_key($urlParams,['sort'=>0,'dir'=>1]);
@@ -577,14 +613,14 @@ class WosController extends Controller {
                 $this->pExit('<b>WOS API problem:</b> '.$response['err_code'].': '.$response['msg'],418);
             }
             $data = $response['data'];
-            if ($data->kid != self::OUR_STATE) {
+            if ($data->kid != $this->our_state) {
                 $this->pExit('<b>'.$data->nickname.'</b> is in invalid state #'.$data->kid,404);
             }
             // All good, insert!
             $pe = new playerExtra(); // 'extra' field pre-populated with defaults
             $aid = db()
                 ->select('alliances','id')
-                ->where(['short_name'=>self::OUR_ALLIANCE])  // Default to VHL alliance
+                ->where(['short_name'=>$this->our_alliance])  // Default to VHL alliance
                 ->first();
             $pe->alliance_id = empty($aid) ? 0 : $aid['id'];
             $t = $this->getTimestring(true,false);
@@ -796,7 +832,7 @@ class WosController extends Controller {
      */
     public function giftcodes() {
         $this->htmlHeader('== Sent Giftcode List');
-        $this->p('This is a summary of gift codes sent in the past','p');
+        $this->p('This is a summary of the last 10 gift codes sent in the past','p');
         $this->p('<table><tr>');
         foreach (array_keys(self::GIFTCODE_COLUMNS) as $colName) {
             $this->p("<u>$colName</u>",'th');
@@ -806,7 +842,7 @@ class WosController extends Controller {
             $allGiftcodes = db()
                 ->select('giftcodes')
                 ->orderBy('id','desc')
-                ->limit(50)
+                ->limit(10)
                 ->all();
             $stats = new giftcodeStatistics();
             foreach ($allGiftcodes as $a) {
@@ -1295,7 +1331,7 @@ class WosController extends Controller {
         $sd = $signInResponse['data'];
         $signInResponse['playerGood'] = true;
         $stateID = isset($sd->kid) ? $sd->kid : -1;
-        if ($signInResponse['err_code'] == 40004 || $stateID !=self::OUR_STATE ) {
+        if ($signInResponse['err_code'] == 40004 || $stateID !=$this->our_state ) {
             // 40004 = Player doesn't exist
             $this->p(sprintf('DELETING player: invalid %s</p>',
                             $stateID==-1 ? 'WOS user' : 'state (#'.$stateID.')'
@@ -1705,7 +1741,8 @@ Body3:
         $this->p('</head><body style="background-color:#D3D3D3;">');
         $this->p("WOS #245 Gift Rewards",'h1');
         if ( $this->dbg || $this->guzEmulate ) {
-            $this->p(__CLASS__.': dbg='.($this->dbg?1:0).' guzEmulate='.($this->guzEmulate?1:0),'pre',true);
+            $this->p('Default alliance='.$this->our_alliance.' state #'.$this->our_state.' dataDir='.$this->dataDir.
+                        "\n".__CLASS__.': dbg='.($this->dbg?1:0).' guzEmulate='.($this->guzEmulate?1:0),'pre',true);
         }
 
         $this->p('<table><tr>');
@@ -1714,8 +1751,8 @@ Body3:
         $this->p('<b>|</b> <a href="/players">Players</a>','td');
         $this->p('<b>|</b> <a href="/giftcodes">Giftcodes</a>','td');
         $this->p('<b>|</b> <a href="/download">Download</a>','td');
-        $this->p('<td width="5">&nbsp;</td>');
-        $this->p($this->menuForm('Add','player ID','','['.self::OUR_ALLIANCE.'] '),'td');
+        $this->p('</tr></table><table></tr>');
+        $this->p($this->menuForm('Add','player ID','','['.$this->our_alliance.'] '),'td');
         $this->p($this->menuForm('Remove','player ID','',' <b>||</b> '),'td');
         $this->p($this->menuForm('Send','gift code','Send Giftcode',' <b>||</b> '),'td');
         $this->p('</tr></table>');

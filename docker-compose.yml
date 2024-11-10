@@ -2,7 +2,7 @@
 services:
   wos245-app:
     build: ./docker
-    image: leafphp/docker
+    image: leafphp-wos245/docker
     ports:
       - '80:80'
       - '443:443'
