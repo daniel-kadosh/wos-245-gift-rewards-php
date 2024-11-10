@@ -3,7 +3,7 @@
 WOS-245 Gift Rewards & User database (PHP version 1.7.1)
 
 ## App Info
-Application is based on this work:
+Application is initially based on this work:
 https://github.com/Nico31300/wos-245-gift-rewards
 
 Website/API to send Whiteout Survival gift codes to members of an alliance in State #245.
@@ -20,6 +20,8 @@ https://leafphp.dev/docs/introduction/
 * Create login credentials for Apache:
 ** Run `wos.sh -a` to launch the container
 ** Run `wos.sh -u USERNAME` to create one (or more) users
+NOTE: A single digest auth file is used, so all users there can manage all of
+the subdomains hosted. Security hole for now, may fix later
 
 ## System dependencies
 Host OS:
@@ -51,14 +53,20 @@ Run without parameters to get usage details.
 * `docker/php.ini` Has extra PHP configs for both CLI and running under Apache
 
 Runtime files you need to create:
-* `wos245/apache-auth` Apache digest auth user file. Use `wosh.sh -u USERNAME` to create at least 1 user,
+* `./apache-auth` Apache digest auth user file. Use `wosh.sh -u USERNAME` to create at least 1 user,
 then you can manage using the "hidden" `/admin` menu from your web browser.
 The `/admin/*` hidden menu relies on digest auth being the mechanism to handle users of the app.
 * `wos245/valhalla245.duckdns.org/*` SSL certificates, installed manually
+* `wos245/tea245.duckdns.org/*` SSL certificates, installed manually
 
 Runtime files created automatically
-* `wos245/gift-rewards.db` SQLite3 database file
-* `wos245/wos_controller_*.log` App log file
+* `wos245-[3-letter alliance]/gift-rewards.db` SQLite3 database file
+* `wos245-[3-letter alliance]/wos_controller_*.log` App log file
+
+Configure alliances to support in .env.prod (copied to .env at startup) with 2 parallel
+lists of 3-letter name + long name
+* ALLIANCES=VHL,Tea
+* ALLIANCES_LONG=Valhalla,TeaAndBiscuits
 
 NOTE: this Git project's entire directory structure is mounted in the docker image as `/var/www`,
 and file changes in the host OS immediately take effect under the running container.
@@ -66,12 +74,12 @@ and file changes in the host OS immediately take effect under the running contai
 ## Database creation
 `wos.sh -r` will create an empty SQlite3 db schema automatically if it doesn't exist.
 
-To empty the database, remove `wos245/gift-rewards.db` and re-start the application with
+To empty the database, remove `wos245-[3-letter alliance]/gift-rewards.db` and re-start the application with
 `wos.sh -a [-p|-d]`.
 
 ## Database initialization
 Normal startup with `wos.sh -a` will run all DB migration scripts under
-`app/database/migrations/`
+`app/database/migrations/` on every single database configured
 
 ## Deployment instructions
 Run `wos.sh -a -p` to start with production environment, or `wos.sh -a -d` for dev/debug environment.
