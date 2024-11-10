@@ -8,10 +8,12 @@ export $(grep -v '^#' .env | xargs)
 
 # Put together all apache configs into 1 file, re-injecting into container
 if [[ "${APP_ENV}" == "prod" ]] ; then
-    sudo cat /var/www/docker/00*.conf > /etc/apache2/sites-available/000-default.conf
+    CONF_FILE=/tmp/000-default.conf
+    cat /var/www/docker/00*.conf > $CONF_FILE
 else
-    sudo cp /var/www/docker/000-default.conf /etc/apache2/sites-available/000-default.conf
+    CONF_FILE=/var/www/docker/000-default.conf
 fi
+sudo cp $CONF_FILE /etc/apache2/sites-available/000-default.conf
 
 # Run Leaf's DB migration scripts on all DBs and on success launch Apache
 IFS=','
