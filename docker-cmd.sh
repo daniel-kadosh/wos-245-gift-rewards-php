@@ -7,7 +7,7 @@ cd /var/www
 export $(grep -v '^#' .env | xargs)
 
 # Put together all apache configs into 1 file, re-injecting into container
-if [[ "${APP_ENV}" = "prod" ]] ; then
+if [[ "${APP_ENV}" == "prod" ]] ; then
     sudo cat /var/www/docker/00*.conf > /etc/apache2/sites-available/000-default.conf
 else
     sudo cp /var/www/docker/000-default.conf /etc/apache2/sites-available/000-default.conf
