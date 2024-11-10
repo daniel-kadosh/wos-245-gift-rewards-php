@@ -126,7 +126,8 @@ class WosController extends Controller {
         $this->p(sprintf($lineFormat,'alliances','alliances','',
             'Alliance list','Manage alliances list, used to help keep track of players.'),'tr');
         $this->p(sprintf($lineFormat,'players','players','',
-            'Player list','Can sort list and easily update &amp; remove players.'),'tr');
+            'Player list','Have to manually add players knowing their WOS player ID<br/>'.
+            'Can filter &amp; sort list, and easily update &amp; remove 1 player at a time.'),'tr');
         $this->p(sprintf($lineFormat,'send/','send/','[giftcode]',
             'Send a reward','to send ALL players the giftcode if they don\'t have it yet.'.
             '<br/><b>NOTE:</b> page will take 2-5 minutes to show anything, let it run and wait!'.
@@ -138,7 +139,7 @@ class WosController extends Controller {
         $this->p(sprintf($lineFormat,'remove/','remove/','[playerID]',
             'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
         $this->p(sprintf($lineFormat,'updateFromWOS/','updateFromWOS/','[playerID|ignore]',
-            'Revalidate with WOS','Updates player metadata (name, furnace, etc) with WOS API.<br/>'.
+            'Revalidate with WOS','Updates player metadata (name, furnace, etc.) with WOS API.<br/>'.
             'Can update a specific player by ID or those marked "ignore"'),'tr');
         $this->p(sprintf($lineFormat,'giftcodes','giftcodes','',
             'List sent Giftcodes','Summary statistics of Giftcodes sent in the past'),'tr');
@@ -450,6 +451,10 @@ class WosController extends Controller {
         } catch (\Exception $ex) {
             $this->p(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),'p');
         }
+        $this->p('<ul>');
+        $this->p("<b>Ignore</b> = Keep player in the database, but don't send them a gift code.",'li');
+        $this->p("<b>Action buttons</b> = Will act on only 1 player, this UI is crude and simple ;-)",'li');
+        $this->p('</ul>');
         $this->htmlFooter();
     }
 
