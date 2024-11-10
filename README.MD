@@ -13,6 +13,9 @@ Has a "hidden" menu (/admin URL) to help manage Apache digest auth users
 Written in PHP 8 with the Leaf microframework:
 https://leafphp.dev/docs/introduction/
 
+DISCLAIMER: This work follows many best-practices but takes a lot of shortcuts
+because it is just not that important and I'm lazy ;-)
+
 ## Installation
 * Clone from Github: https://github.com/daniel-kadosh/wos-245-gift-rewards-php
 * Host OS: Install Docker
