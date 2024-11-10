@@ -18,8 +18,9 @@ $0 -a|-o|-r|(-u username) [-p|-d]
 
 Container must be running for these tools:
 -b start Bash shell inside running container, for debugging
+-l show active logs (really for prod instance)
 -u create User (or change user's password) for Apache digest auth
-   ## Requires -l REALM, as an alliance name like 'vhl'
+   ## NOT IMPLEMENTED: Requires -m REALM, as an alliance name like 'vhl'
 
 Environment defaults to ${ENV}, and these only apply to -r and -a:
 -p set to Production environment
@@ -28,7 +29,7 @@ Environment defaults to ${ENV}, and these only apply to -r and -a:
     exit 1
 }
 
-OPSTRING=":aorbpdl:u:"
+OPSTRING=":aorbpdlm:u:"
 while getopts ${OPSTRING} opt; do
     case ${opt} in
         a)  CMD=wos-start
@@ -43,7 +44,9 @@ while getopts ${OPSTRING} opt; do
             ;;
         d)  ENV=dev
             ;;
-        l)  CMD=wos-user
+        l)  CMD=wos-logs
+            ;;
+        m)  CMD=wos-user
 #            HTREALM="${OPTARG,,}"
             ;;
         u)  CMD=wos-user
@@ -88,6 +91,15 @@ function wos-stop() {
     echo "Stopping"
     set -x
     ${CMD_PREFIX} docker compose down --remove-orphans ${DOCKER_APP_NAME}
+}
+
+function wos-logs() {
+    PS_PREFIX=${CMD_PREFIX}
+    if [[ "${PS_PREFIX}" == 'winpty' ]]; then
+        PS_PREFIX=''
+    fi
+    CONTAINER=$(${PS_PREFIX} docker ps | grep leafphp-wos245 | awk "-F " '{print $1}')
+    ${CMD_PREFIX} docker logs -f ${CONTAINER}
 }
 
 function wos-rebuild() {
