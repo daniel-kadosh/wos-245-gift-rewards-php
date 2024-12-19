@@ -15,6 +15,7 @@ class Commands
     {
         $console->register([
             ExampleCommand::class,
+            GiftcodeDaemonCommand::class,
         ]);
     }
 }
