@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Exception;
+
 /**
  * Manage giftcode statistics
  *
@@ -28,10 +30,14 @@ class GiftcodeStatistics {
      * Increment the value of one of the array statistics
      */
     public function increment(string $varName, string $key) {
-        if ( empty($this->$varName[$key]) ) {
-            $this->$varName[$key] = 1;
-        } else {
-            $this->$varName[$key]++;
+        try {
+            if ( empty($this->$varName[$key]) ) {
+                $this->$varName[$key] = 1;
+            } else {
+                $this->$varName[$key]++;
+            }
+        } catch (Exception $e) {
+            $this->log->info(__METHOD__." varName=$varName Exception: ".$e->getMessage());
         }
     }
 
@@ -54,7 +60,7 @@ class GiftcodeStatistics {
             foreach ($x as $name => $value) {
                 $this->$name = $value;
             }
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             $this->log->info(__METHOD__.' Exception: '.$e->getMessage());
             $this->log->info('statistics='.$statistics);
         }

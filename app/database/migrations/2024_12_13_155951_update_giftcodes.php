@@ -51,6 +51,11 @@ class UpdateGiftcodes extends Database
                 $table->integer('send_gift_ts')->default(0);
             });
         }
+        if (!static::$capsule::schema()->hasColumn("players","giftcode_ids")) {
+            static::$capsule::schema()->table("players", function (Blueprint $table) {
+                $table->text('giftcode_ids')->nullable();
+            });
+        }
     }
 
     /**

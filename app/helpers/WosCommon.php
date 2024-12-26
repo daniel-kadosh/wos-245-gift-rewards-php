@@ -2,10 +2,12 @@
 
 namespace App\Helpers;
 
+use App\Models\PlayerExtra;
 use Exception;
 use GuzzleHttp\Client;
 use Leaf\Config;
 use Leaf\Log;
+use PDOException;
 
 class WosCommon
 {
@@ -27,12 +29,13 @@ class WosCommon
     public $ourAllianceLong;
 
     public $webMode;        // Whether running as a webpage or command-line
+    public $myPID;
 
 #    private $con;
 #    public function __construct($controllerObject) {
 #        $this->con = $controllerObject;
     public function __construct() {
-
+        $this->myPID = posix_getpid();
         $callingClass = debug_backtrace(!DEBUG_BACKTRACE_PROVIDE_OBJECT|DEBUG_BACKTRACE_IGNORE_ARGS,2)[1]['class'];
         $this->webMode = ( strstr($callingClass,'App\Console') ? false : true );
 
@@ -67,7 +70,7 @@ class WosCommon
         if ( empty($this->log) ) {
             Config::set('log.dir', $this->webMode ? $this->dataDir : $this->baseDataDir.'/');
             Config::set('log.style','linux');
-            $baseLogfile = ( $this->webMode ? 'wos_controller_' : 'wos_daemon_' );
+            $baseLogfile = ( $this->webMode ? 'wos_controller_' : 'giftcoded_' );
             Config::set('log.file', $baseLogfile.substr($this->getTimestring(false,false),0,7).'.log');
             $this->log = app()->logger();
             $this->log->level( $this->dbg ? Log::DEBUG : Log::INFO );
@@ -85,6 +88,293 @@ class WosCommon
         }
 	    return (string) $this->time->format($inUnixTime ? 'U':
                 'YYYY-MM-DD HH:mm:ss');
+    }
+
+    public function verifyPlayerInWOS( &$p ) {
+        // Verify player
+        $this->p('<p>'.$p['id'].' - <b>'.$p['player_name'].'</b>: ',0,true);
+        $tries = 3;
+        $signInGood = false;
+        $sleepAmount = 0;
+        while ($tries>0 && $this->badResponsesLeft>0) {
+            sleep($sleepAmount);
+            $sleepAmount = 0;
+            $tries--;
+            $signInResponse = $this->signInWOS($p['id']);
+            if ($this->dbg) {
+                $this->pDebug('signInResponse= ',$signInResponse);
+            }
+            if (empty($signInResponse['http-status'])) {
+                // Timeout or network error
+                $this->stats->networkError++;
+                $this->p('(Network error: '.$signInResponse['guzExceptionMessage'].') ',0,true);
+                $this->badResponsesLeft--;
+                sleep($this->guzEmulate ? 0 : 2);
+            } else if ($signInResponse['http-status']==429) {
+                // Hit rate limit!
+                $this->stats->hitRateLimit++;
+                $sleepAmount = $this->guzEmulate ? 1 : 61;
+                $this->p("(Pausing $sleepAmount sec due to 429 signIn rate limit) ",0,true);
+            } else if ($signInResponse['http-status'] >= 400) {
+                $this->stats->increment('signinErrorCodes','GuzException '.$signInResponse['guzExceptionMessage']);
+                $this->p(sprintf('<b>ABORT: WOS signIn API ERROR:</b> httpCode=%s Message=%s',
+                    $signInResponse['http-status'], $signInResponse['guzExceptionMessage'] ) ,'p',true);
+                return null;
+            } else {
+                // All good!
+                $signInGood = true;
+                break;
+            }
+        }
+        if ( ! $signInGood ) {
+            // Couldn't sign in above, but don't want to rush to remove
+            // player unless we have positive confirmation they don't exist.
+            $this->p('<b>ERROR:</b> Failed to sign in player</p>',0,true);
+            return null;
+        }
+        $sd = $signInResponse['data'];
+        $signInResponse['playerGood'] = true;
+        $stateID = isset($sd->kid) ? $sd->kid : -1;
+        if ($signInResponse['err_code'] == 40004 || $stateID !=$this->ourState ) {
+            // 40004 = Player doesn't exist
+            $this->p(sprintf('DELETING player: invalid %s</p>',
+                            $stateID==-1 ? 'WOS user' : 'state (#'.$stateID.')'
+                        ),0,true);
+            if ( $this->deleteById('players',$p['id']) == -1 ) {
+                // Exception thrown during delete, so let's just stop
+                return null;
+            }
+            $this->stats->deletedPlayers[ $p['id'] ] = $p['player_name'];
+            $signInResponse['playerGood'] = false;
+        } else if (
+            $p['player_name']       != trim($sd->nickname)  ||
+            $p['avatar_image']      != $sd->avatar_image    ||
+            $p['stove_lv']          != $sd->stove_lv        ||
+            $p['stove_lv_content']  != $sd->stove_lv_content   )
+        {
+            // Update player if needed
+            $data = [
+                    'player_name'       => trim($sd->nickname),
+                    'avatar_image'      => $sd->avatar_image,
+                    'stove_lv'          => $sd->stove_lv,
+                    'stove_lv_content'  => $sd->stove_lv_content,
+                    'updated_at'        => $this->getTimestring(false,false)
+                    ];
+            $p = array_merge($p, $data);
+            db()->update('players')
+                ->params($data)
+                ->where(['id' => $p['id']])
+                ->execute();
+        }
+        return $signInResponse;
+    }
+
+    public function send1Giftcode($playerId,$giftCode) {
+        // Won't check first that player hasn't received gift code, as that
+        // should happen before calling this OR we need to resend to player
+
+        // Begin retry loop
+        $tries = 3;
+        $sendGiftGood = false;
+        $sleepAmount = 0;
+        while ($tries>0 && $this->badResponsesLeft>0) {
+            if ( ! $this->guzEmulate ) {
+                // Only sleep at top of loop for retrying
+                sleep($sleepAmount);
+            }
+            $sleepAmount = 0;
+            $tries--;
+            $giftResponse = $this->sendGiftCodeWOS($playerId,$giftCode);
+            if ($this->dbg) {
+                $this->pDebug('giftResponse= ',$giftResponse);
+            }
+            if (empty($giftResponse['http-status'])) {
+                // Timeout or network error
+                $this->stats->networkError++;
+                $giftResponse['msg'] = $giftResponse['guzExceptionMessage'];
+                $sleepAmount = $this->guzEmulate ? 0 : 2;
+                $this->p('(Network error: '.$giftResponse['msg']." - pause $sleepAmount sec.) ",0,true);
+                $this->badResponsesLeft--;
+                continue; // Retry
+            }
+            $giftErrCode = $giftResponse['err_code'];
+            if ($giftErrCode == 40014) {
+                // Invalid gift code
+                $this->p('Aborting: Invalid gift code','b',true);
+                $this->stats->increment('giftErrorCodes','40014 Invalid gift code');
+                return null;
+            }
+            if ($giftErrCode == 40007) {
+                // Expired gift code
+                $this->p('Aborting: Gift code expired','b',true);
+                $this->stats->increment('giftErrorCodes','40007 Gift code expired');
+                return null;
+            }
+            $resetIn = 0;
+            if ($giftErrCode == 40004) {
+                // Timeout retry
+                $resetIn = 3;
+                $msg = "Gift errCode=$giftErrCode Timeout retry";
+            } else if ($giftResponse['http-status']==429) {
+                // Too many requests
+                if ( !empty($giftResponse['headers']['x-ratelimit-reset']) ) {
+                    $ratelimitReset = $giftResponse['headers']['x-ratelimit-reset'];
+                    // Convert from UNIX time?
+                    $resetAt = (intval($ratelimitReset) == $ratelimitReset ?
+                                    tick("@$ratelimitReset") : tick());
+                    $resetIn = intval($ratelimitReset) - intval($this->getTimestring(false,true));
+                } else {
+                    $ratelimitReset = -1;
+                    $resetAt = tick();
+                }
+                // For sanity, until I see real values for x-ratelimit-reset
+                if ( $resetIn < 1 || $resetIn > 65) {
+                    $resetIn = 21;
+                }
+                //if ( $this->dbg ) {
+                // Force debug info for this case, as we haven't seen this live.
+                // The 60sec sleep for a 429 in signIn above seems to have solved
+                // this whole issue, and we may not need to sleep here at all.
+                    $this->pDebug('**** giftHeaders: ',$giftResponse['headers']);
+                    $this->p("429: x-ratelimit-reset=$ratelimitReset"
+                        ."\nnow=".$this->getTimestring(false,true)
+                        ."=".$this->getTimestring(false,false)
+                        ."\nresetIn=$resetIn"
+                        ."\nresetAt=".$resetAt->format('YYYY-MM-DD HH:mm:ss')
+                        ,'pre',true);
+                //}
+                $msg = "http 429 Too many attempts";
+                $this->stats->hitRateLimit++;
+            } else if ($giftResponse['http-status'] >= 400) {
+                $this->p('<b>WOS gift API ERROR:</b> '.$giftResponse['guzExceptionMessage'],'p',true);
+                $this->stats->increment('giftErrorCodes','GuzException '.$giftResponse['guzExceptionMessage']);
+                return null;
+            }
+            if ( !empty($msg) ) {
+                $this->stats->increment('giftErrorCodes',$msg);
+            }
+            if ( $resetIn > 0 ) {
+                $msg = "$msg: ".$giftResponse['msg']." - pausing $resetIn sec.";
+                $this->p("($msg)",0,true);
+                $this->updatePlayerMessageGiftcodeID($playerId,null,$msg);
+                $sleepAmount = $this->guzEmulate ? 1 : $resetIn;
+            } else { // Success!
+                break;
+            }
+        }
+        switch ($giftErrCode) {
+            case 20000:
+                $msg = "$giftCode: redeemed succesfully";
+                $sendGiftGood = true;
+                $this->stats->succesful++;
+                break;
+            case 40008:
+                $msg = "$giftCode: already used";
+                $sendGiftGood = true;
+                $this->stats->alreadyReceived++;
+                break;
+            case 40011: // Some other version of "already used"
+                $msg = "$giftCode: used (SAME TYPE EXCHANGE)";
+                $sendGiftGood = true;
+                $this->stats->alreadyReceived++;
+                break;
+            default:
+                $msg = "$giftErrCode ".$giftResponse['msg'];
+                $this->stats->increment('giftErrorCodes',$msg);
+                break;
+        }
+        $this->p("$msg</p>",0,true);
+        $this->updatePlayerMessageGiftcodeID($playerId,
+                ($sendGiftGood ? $this->getGiftcodeID($giftCode) : null),$msg);
+        $this->updateGiftcodeStats($giftCode);
+
+        if ( ! $sendGiftGood ) {
+            // Unless we know for sure we should continue to other players,
+            // let's abort here and not hit the API any more.
+            // We can add more retriable cases above as we find them.
+            $this->p('Cannot confirm we can continue, stopping now.','p',true);
+            return null;
+        }
+        return $giftResponse;
+    }
+
+    ////////////////// Helper DB functions
+    public function updateGiftcodeStats($giftCode,$sendGiftTS=null) {
+        $params = [
+            'updated_at' => $this->getTimestring(true,false),
+            'statistics' => $this->stats->getJson()
+        ];
+        if ( !is_null($sendGiftTS) ) {
+            $params['send_gift_ts'] = $sendGiftTS;
+        }
+        $rowsUpdated = 0;
+        try {
+            $rowsUpdated = db()
+                    ->update('giftcodes')
+                    ->params($params)
+                    ->where(['code' => $giftCode])
+                    ->execute()
+                    ->rowCount();
+        } catch (PDOException $ex) {
+            $this->p('<b>DB ERROR updating giftcodes:</b> '.$ex->getMessage(),'p',true);
+        }
+        return $rowsUpdated;
+    }
+    public function updatePlayerMessageGiftcodeID($playerId,$giftCodeID,$msg) {
+        $params = [
+            'last_message'  => $msg,
+            'updated_at'    => $this->getTimestring(true,false)
+        ];
+        if ( !empty($giftCodeID) ) {
+            $player = db()
+                ->select('players')
+                ->find($playerId);
+            $extra = new PlayerExtra($player['extra']);
+            if ( $extra->addGiftcodeID($giftCodeID) ) {
+                $params['giftcode_ids'] = $extra->getGiftcodeIDs();
+            }
+        }
+        db()->update('players')
+            ->params($params)
+            ->where(['id' => $playerId])
+            ->execute();
+    }
+    public function getGiftcodeID($giftCode) {
+        static $giftCodes = [];
+        $gcIndex = sprintf('%s-%s',$this->ourAlliance,$giftCode);
+        if ( !empty($giftCodes[$gcIndex]) ) {
+            return $giftCodes[$gcIndex];
+        }
+        $giftCodes[$gcIndex] = db()
+            ->select('giftcodes','id')
+            ->where(['code' => $giftCode])
+            ->first();
+        return $giftCodes[$gcIndex];
+    }
+    public function getPlayersForGiftcode($giftCode,$countOnly=true) {
+        $giftCodeID = $this->getGiftcodeID($giftCode);
+        $playerQuery = db()
+            ->select('players')
+            ->where('last_message', 'not like', $giftCode.': %') // Could remove this at some point
+            ->where('giftcode_ids', 'not like', "%|$giftCodeID|%")
+            ->where('extra', 'not like', '%ignore":1%');
+        return ( $countOnly ? $playerQuery->count() :
+                        $playerQuery->orderBy('id','asc')->all() );
+    }
+
+    public function deleteById($table,$id) {
+        try {
+            $result = db()
+                ->delete($table)
+                ->where(['id' => $id])
+                ->execute();
+            return $result->rowCount();
+        } catch (PDOException $ex) {
+            $this->p('<b>DB ERROR Deleting:</b> '.$ex->getMessage(),'p',true);
+        } catch (\Exception $ex) {
+            $this->p('<b>Exception Deleting:</b> '.$ex->getMessage(),'p',true);
+        }
+        return -1;
     }
 
     ///////////////////////////////////////////////////////////////////////
@@ -108,9 +398,7 @@ class WosCommon
     }
 
     public function logInfo($msg) {
-        static $myPid = getmypid();
-        static $prefix = ($this->webMode ? 'W' : 'd' ); // Web or daemon
-        $this->log->info( "$prefix$myPid) ".str_replace("\n"," ",trim(strip_tags($msg))) );
+        $this->log->info( $this->myPID.') '.str_replace("\t"," ",trim(strip_tags($msg))) );
     }
 
 
@@ -234,11 +522,6 @@ Body3:
         $timestring = $this->getTimestring(empty($cdk));
         $signRaw = ($cdk ? "cdk=$cdk&" : '').
             "fid=$fid&time=$timestring".self::HASH;
-        if ( $this->dbg ) {
-            $this->p("Form params:<br/>\n".
-                    "sign raw: $signRaw\n".
-                    "sign md5: ".md5($signRaw),'pre');
-        }
         $formParams = [
             'sign' => md5($signRaw),
             'fid'  => $fid,

@@ -11,12 +11,11 @@ class PlayerExtra {
     public $alliance_id = 0;
     public $comment     = '';
     public $ignore      = 0;
-    #public $rank        = 0;
-    #public $power;
+    private $giftcode_ids = '';   // Don't store this in the DB field "extra"
 
     const F_STRING   = 1;
     const F_INT      = 2;
-    const F_RANK     = 3; // numbers 1-5
+    const F_ARRAY    = 3;
     const F_ALLIANCE = 4; // "join" with alliance_id from database
     const F_BOOLEAN  = 6;
 
@@ -24,12 +23,10 @@ class PlayerExtra {
     private $fields = [
         'alliance_id'   => self::F_ALLIANCE,
         'comment'       => self::F_STRING,
-        'ignore'        => self::F_BOOLEAN
-        #'rank'          => self::F_RANK
-        #'power'         => self::F_INT
+        'ignore'        => self::F_BOOLEAN,
+        'giftcode_ids'  => self::F_STRING
     ];
     private $alliances; // Valid values for alliance_id & name
-    private $ranks;     // Valid values for rank (R1-R5)
 
     /**
      * @param string $extra     Optional JSON string stored in 'extra' DB column
@@ -49,12 +46,6 @@ class PlayerExtra {
                 $this->alliances[$a['id']] = $a['alliance_name'];
             }
         }
-        /*
-        $this->ranks[0] = '-';
-        for ($i=1; $i<6; $i++) {
-            $this->ranks[$i] = "R$i";
-        }
-        */
     }
 
     /**
@@ -68,9 +59,6 @@ class PlayerExtra {
                     [-1 => 'all'] + $this->alliances :
                     $this->alliances;
                 break;
-            #case self::F_RANK:
-            #    $options = &$this->ranks;
-            #    break;
             case self::F_INT:
                 return sprintf('<input type="number" id="%s" name="%s" value="%d">',
                             $field,$field,$this->$field);
@@ -84,6 +72,8 @@ class PlayerExtra {
                 }
                 $options = [-1 => 'all', 0 => 'false', 1=> 'true'];
                 break;
+            case self::F_ARRAY:
+                return ''; // ignore for now...
             default:
                 return "Unknown field type $type for field $field";
         }
@@ -106,7 +96,8 @@ class PlayerExtra {
     public function parseJsonExtra($extra) {
         // First reset everything to defaults
         foreach ($this->fields as $field => $type) {
-            $this->$field = ($type==self::F_STRING ? '' : 0);
+            $this->$field = ($type==self::F_STRING ? '' :
+                            ($type==self::F_ARRAY  ? [] : 0) );
         }
         if (empty($extra)) {
             return;
@@ -115,7 +106,8 @@ class PlayerExtra {
             $x = json_decode($extra);
             foreach ($x as $name => $value) {
                 $type = $this->fields[$name];
-                $this->$name = ($type==self::F_STRING ? trim($value) : (int) $value);
+                $this->$name = ($type==self::F_STRING ? trim($value) :
+                               ($type==self::F_ARRAY  ? $value       : (int) $value) );
             }
         } catch (\Exception $e) {
             $this->log->info(__METHOD__.' Exception: '.$e->getMessage());
@@ -139,8 +131,23 @@ class PlayerExtra {
             $a['alliance_name'] = $this->alliances[ intval($this->alliance_id) ];
         }
         foreach ($this->fields as $field => $type) {
-            $a[$field] = ($type==self::F_STRING ? $this->$field : (int) $this->$field);
+            $a[$field] = ($type!=self::F_INT ? $this->$field : (int) $this->$field);
         }
         return $a;
+    }
+
+    // Special field functions
+    public function getGiftcodeIDs() {
+        return $this->giftcode_ids;
+    }
+    public function hasGiftcodeID($giftCodeID) {
+        return strstr($this->giftcode_ids,"|$giftCodeID|") ? true : false;
+    }
+    public function addGiftcodeID($giftCodeID) {
+        if ( ! $this->hasGiftcodeID($giftCodeID) ) {
+            $this->giftcode_ids .= "|$giftCodeID|";
+            return true;
+        }
+        return false;
     }
 }
