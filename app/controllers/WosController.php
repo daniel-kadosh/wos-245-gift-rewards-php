@@ -215,7 +215,7 @@ class WosController extends Controller {
     public function allianceUpdate($alliance_id) {
         $this->htmlHeader('== Update Alliance');
         try {
-            $id = $this->validateId($alliance_id);
+            $id = $this->validateID($alliance_id);
             $allianceData = db()
                 ->select('alliances')
                 ->find($id);
@@ -245,7 +245,7 @@ class WosController extends Controller {
      */
     public function allianceRemove($alliance_id) {
         $this->htmlHeader('== Remove Alliance');
-        $id = $this->validateId($alliance_id);
+        $id = $this->validateID($alliance_id);
         $result = db()
             ->select('alliances')
             ->find($id);
@@ -253,7 +253,7 @@ class WosController extends Controller {
             $this->pExit("Alliance id=$id not found",404);
         }
         $this->pDebug('Details',$result);
-        $count = $this->wos->deleteById('alliances',$id);
+        $count = $this->wos->deleteByID('alliances',$id);
         if ($count == 0) {
             $this->pExit("Could not delete Alliance id=$id ??",404);
         }
@@ -437,52 +437,111 @@ class WosController extends Controller {
             $gc = db()->select('giftcodes')
                 ->where(['code' => $giftCode])
                 ->first();
-            $giftCodeID = 0;
-            if ( !empty($gc) ) {
-                $this->wos->stats->parseJsonStatistics($gc['statistics']);
-                $giftCodeID = $gc['id'];
-            }
-            if ($this->wos->dbg) {
-                $this->pDebug('prevStats for this gift code',$gc);
-            }
-            $this->wos->stats->increment('usersSending',$_SERVER['REMOTE_USER']);
-            $s = $this->wos->stats->getJson();
-            $t = $this->wos->getTimestring(false,false);
-            if ( $giftCodeID ) {
-                $rowsUpdated = db()
-                    ->update('giftcodes')
-                    ->params(['updated_at' => $t,
-                              'statistics' => $s
-                            ])
-                    ->where(['id' => $giftCodeID])
-                    ->execute()
-                    ->rowCount();
-                if ( $rowsUpdated<1 ) {
-                    $this->pExit('Could not update giftcodes table',500);
-                }
-            } else {
-                db()
-                    ->insert('giftcodes')
+            $numPlayers = $this->wos->getPlayersForGiftcode( empty($gc) ? null : $giftCode );
+
+            if ( empty($gc) ) {
+                // NEW GiftCode: Start the process
+                //
+                // send_gift_ts: 0=daemon NOT processing, otherwise Unixtime of when it started
+                // pct_done: -1=signal for daemon to start, 0-99=processing, 100=done.
+                //           Truly completed: pct_done=100 + send_gift_ts=0
+                //
+                $this->wos->stats = new GiftcodeStatistics();
+                $this->wos->stats->increment('usersSending',$_SERVER['REMOTE_USER']);
+                $t = $this->wos->getTimestring(true,false); // Formatted time
+                db()->insert('giftcodes')
                     ->params(['code'        => $giftCode,
                               'created_at'  => $t,
                               'updated_at'  => $t,
-                              'statistics'  => $s
+                              'statistics'  => $this->wos->stats->getJson(),
+                              'send_gift_ts'=> 0,
+                              'pct_done'    => -1  // Tell daemon to start processing
                             ])
                     ->execute();
-                $giftCodeID = db()->lastInsertId();
-            }
-            /*  INSERT or UPDATE will increment ID on UPDATE, so don't use it!
-             *
-            db()->query('INSERT INTO giftcodes(code,created_at,updated_at,statistics) '.
-                        'VALUES (?,?,?,?) ON CONFLICT(code) '.
-                        'DO UPDATE SET updated_at=?, statistics=?')
-                ->bind($giftCode, $t, $t, $s, $t, $s)
-                ->execute();
-            */
-        } catch (PDOException $ex) {
-            $this->p('<b>DB WARNING upserting giftcode:</b> '.$ex->getMessage(),'p',true);
-        }
+                if ($this->wos->dbg) {
+                    $this->pDebug('GiftCode object',$gc);
+                }
 
+                // Really done here, so perhaps refresh to keep updating screen?
+                $this->p("QUEUED New gift code for processing of $numPlayers players.",'p',true);
+                #$this->htmlFooter();
+                #return;
+            } else {
+                // Existing GiftCode cases:
+                // 1) Daemon hasn't started
+                //       Check if it's taking too long (pct_done=-1 long time) and tell user if so
+                //       ?? Consider it might still be processing a DIFFERENT giftcode
+                //       Tell user to wait
+                // 2) Daemon in process, still running
+                //       Just display progress
+                // 3) Daemon quit mid-process
+                //       Go ahead and restart
+                // 4) Daemon already completed successfully
+                //       Check if more (new) users would get giftcode, and restart if so
+                // 5) Giftcode is expired or invalid
+                //       Do nothing
+                //
+                if ($this->wos->dbg) {
+                    $this->pDebug('GiftCode object',$gc);
+                }
+                $this->wos->stats = new GiftcodeStatistics($gc['statistics']);
+                $origNumPlayers = empty($this->wos->stats->expected) ?
+                                    $numPlayers : end($this->wos->stats->expected);
+
+                if ( ! empty($this->wos->stats->expected) ) {
+                    $this->p(sprintf('%d previous runs: %d succesful redemptions, %d had already redeemed.',
+                                count($this->wos->stats->expected),
+                                $this->wos->stats->succesful,
+                                $this->wos->stats->alreadyReceived)
+                            ,'p');
+                }
+                $t = $this->wos->getTimestring(true); // Unixtime
+                $timeSinceUpdate = $t - tick($gc['updated_at'])->format('U');
+                $updateHMS       = gmdate("H:i:s", $timeSinceUpdate);
+                $timeSinceStart  = $t - $gc['send_gift_ts'];
+                $startHMS        = gmdate("H:i:s", $timeSinceStart);
+                $pctDone         = $gc['pct_done'].'%';
+
+                $resetPctDone = false;
+                switch ( GiftcodeStatistics::stateOfGiftCode($gc) ) {
+                    case GiftcodeStatistics::GC_QUEUED:     // 1) hasn't started
+                        $this->p("QUEUED $updateHMS ago. Hasn't started processing, expecting $numPlayers players.",'p',true);
+                        break;
+                    case GiftcodeStatistics::GC_RUNNING:    // 2) still processing
+                        $this->p("RUNNING for $startHMS, $pctDone done, at $numPlayers/$origNumPlayers players.",'p',true);
+                        break;
+                    case GiftcodeStatistics::GC_QUIT:       // 3) Quit mid-process, restart if users to process
+                        $timeSinceUpdate = 0;
+                        $resetPctDone = ($numPlayers>0 ? -1 : 100);
+                        $msg = "QUIT last run at $pctDone done for $origNumPlayers players";
+                        break;
+                    case GiftcodeStatistics::GC_DONE:       // 4) Already done, restart if users to process
+                        $timeSinceUpdate = 0;
+                        $resetPctDone = ($numPlayers>0 ? -1 : 100);
+                        $msg = 'FULLY COMPLETED previously';
+                        break;
+                    case GiftcodeStatistics::GC_EXPIRED:       // 4) Already done, restart if users to process
+                        $timeSinceUpdate = 0;
+                        $this->p("EXPIRED or invalid gift code as of last check on $updateHMS.",'p',true);
+                        break;
+                    default:
+                        $this->pDebug('UNKNOWN state of giftcode!',$gc);
+                        $timeSinceUpdate = 0;
+                        break;
+                }
+                if ( $timeSinceUpdate >= 300 ) { // 5min is too long to wait
+                    $this->p("WARNING: It's been too long, something is probably wrong with the giftcode daemon!",'p',true);
+                } else if ( $resetPctDone ) {
+                    $this->p(sprintf('%s, %s.', $msg,
+                                $numPlayers>0 ? "re-queing job for $numPlayers players" :
+                                                "and now no players need it")
+                            ,'p',true);
+                    $this->wos->updateGiftcodeStats($giftCode,$resetPctDone,0);
+                }
+            }
+        } catch (PDOException $ex) {
+            $this->p(__METHOD__.' <b>DB WARNING upserting giftcode:</b> '.$ex->getMessage(),'p',true);
+        }
         $this->htmlFooter();
     }
 
@@ -491,7 +550,7 @@ class WosController extends Controller {
      */
     public function add($player_id) {
         $this->htmlHeader('== Add player');
-        $player_id = $this->validateId($player_id);
+        $player_id = $this->validateID($player_id);
         $this->p("Adding player id=$player_id",'p',true);
         try {
             // Check for duplicate before hitting WOS API
@@ -554,7 +613,7 @@ class WosController extends Controller {
      */
     public function update($player_id) {
         $this->htmlHeader('== Update player');
-        $player_id = $this->validateId($player_id);
+        $player_id = $this->validateID($player_id);
         $this->p("Updating player id=$player_id",'p',true);
         try {
             // Check for duplicate before hitting WOS API
@@ -629,7 +688,7 @@ class WosController extends Controller {
                     ->all();
                 break;
             default:
-                $playerIDs = [ $this->validateId($player_id) ];
+                $playerIDs = [ $this->validateID($player_id) ];
                 break;
         }
         if ( empty($playerIDs) ) {
@@ -710,7 +769,7 @@ class WosController extends Controller {
      */
     public function remove($player_id) {
         $this->htmlHeader('== Remove player');
-        $player_id = $this->validateId($player_id);
+        $player_id = $this->validateID($player_id);
         $this->p("Removing player id=$player_id",'p',true);
         $result = db()
             ->select('players')
@@ -719,7 +778,7 @@ class WosController extends Controller {
             $this->pExit("Player id=$player_id not found",404);
         }
         $this->pDebug('Details',$result);
-        $count = $this->wos->deleteById('players',$player_id);
+        $count = $this->wos->deleteByID('players',$player_id);
         if ($count == 0) {
             $this->pExit("Could not delete player id=$player_id ??",404);
         }
@@ -747,10 +806,7 @@ class WosController extends Controller {
             $stats = new GiftcodeStatistics();
             $i=0;
             foreach ($allGiftcodes as $a) {
-                if ($i++ == 0) {
-                    $this->pDebug('First=',$a);
-                }
-
+                if ($i++==0 || $a['pct_done']<100) $this->pDebug('First=',$a);
                 $stats->parseJsonStatistics($a['statistics']);
                 unset($a['statistics']);
                 $a = array_merge($a, (array) $stats);
@@ -1124,7 +1180,7 @@ class WosController extends Controller {
         }
         return true;
     }
-    private function validateId($player_id) {
+    private function validateID($player_id) {
         if (!empty($player_id)) {
             $player_id = trim($player_id);
             $int_id = abs(intval($player_id));
@@ -1212,8 +1268,10 @@ class WosController extends Controller {
         $this->p(sprintf('WOS #245 Gift Rewards <span style="color:#0000c0">[%s]%s</span>',
             $this->wos->ourAlliance,$this->wos->ourAllianceLong),'h1');
         if ( $this->wos->dbg || $this->wos->guzEmulate ) {
+            $this->p('<span style="color:#007000">');
             $this->p('Default alliance='.$this->wos->ourAlliance.' state #'.$this->wos->ourState.' dataDir='.$this->wos->dataDir.
                         "\n".__CLASS__.': dbg='.($this->wos->dbg?1:0).' guzEmulate='.($this->wos->guzEmulate?1:0),'pre',true);
+            $this->p('</span>');
         }
 
         $this->p('<table><tr>');
@@ -1261,24 +1319,24 @@ class WosController extends Controller {
             'long_name'  => ['Long Name',     15 ],
             'comment'    => ['Comment',       30 ]
         ];
-        $aId = empty($data['id']) ? 0 : $data['id'];
+        $aID = empty($data['id']) ? 0 : $data['id'];
         $ret = sprintf('<form action="/alliance/%s%s" method="post">%s',
                         strtolower($action),
-                        $aId ? "/$aId" : '',
-                        $aId ? "<td>$aId</td>\n" : "\n"
+                        $aID ? "/$aID" : '',
+                        $aID ? "<td>$aID</td>\n" : "\n"
                     );
         foreach ($aFields as $field => $fieldInfo) {
             $ret .= sprintf('%s<input placeholder="%s" type="text" id="%s" name="%s" size="%d"%s>%s',
-                        $aId ? '<td>' : '',
+                        $aID ? '<td>' : '',
                         $fieldInfo[0], $field, $field, $fieldInfo[1],
                         empty($data[$field]) ? '' : ' value="'.$data[$field].'"',
-                        $aId ? "</td>\n" : "\n"
+                        $aID ? "</td>\n" : "\n"
                     );
         }
         return $ret.sprintf('%s<input type="submit" value="%s"></form>%s',
-                    $aId ? "<td>" : '',
+                    $aID ? "<td>" : '',
                     $action,
-                    $aId ? "</td>" : "\n"
+                    $aID ? "</td>" : "\n"
                 );
     }
     private function p($msg,$htmlType=null,$log=false) {

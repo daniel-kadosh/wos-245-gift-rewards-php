@@ -30,7 +30,6 @@ class GiftcodeDaemonCommand extends Command
 
     // Signals the daemon should handle
 	public static $signalsToHandle = [ SIGQUIT, SIGINT, SIGTERM, SIGABRT, SIGHUP ];
-	public static $signalReceived  = NULL;
 
     /**
      * Configure your command
@@ -83,37 +82,54 @@ $this->wos->guzEmulate = true;
     }
 
     private function daemonLoop() {
-        while ( empty(static::$signalReceived) ) {
+        while ( empty(WosCommon::$signalReceived) ) {
             foreach ($this->wos->alliance2Long as $alliance => $allianceLong) {
                 // Handle received signal
-                if ( static::$signalReceived ) {
-                    $this->p("*** exiting main loop, received signal ".static::$signalReceived);
+                if ( WosCommon::$signalReceived ) {
+                    $this->p("*** exiting main loop, received signal ".WosCommon::$signalReceived);
                     return;
                 }
 
                 // Switch alliance and process
                 #$allianceShort = strtolower($alliance);
                 $this->wos->setAllianceState($alliance);
-
                 try {
-                    // If we happen to have multiple giftcodes to process, FIFO
-                    $allGiftCodes = db()
-                        ->select('giftcodes')
-                        ->where('send_gift_ts', -1)
-                        ->orderBy('id','asc')
-                        ->limit(1)
-                        ->all();
-                    if ( !empty($allGiftCodes) ) {
-                        $this->sendGift($allGiftCodes[0]);
+                    if ($this->wos->guzEmulate) {
+                        print substr($alliance,0,1);
+                        #$this->p("@-Checking for giftcode to send for [$alliance]$allianceLong");
                     }
+                    // Process giftcodes FIFO
+                    // Rely on user to explicitly retry previous partial aborted run, where
+                    // web interface sets pct_done=-1
+                    $firstGiftCode = db()
+                        ->select('giftcodes')
+                        ->where('pct_done', -1)
+                        ->first();  // ORDER BY id ASC LIMIT 1
+                    /*
+                     * Alternate approach, where daemon decides if we should automatically retry
+                     * a previously incomplete run
+                     *
+                    $oldRetryTime = $this->wos->getTimestring(true,true) - (10 * 600);
+                    $allGiftCodes = db()
+                        ->query('SELECT * FROM giftcodes '.
+                                    'WHERE pct_done=-1 '.
+                                    "  OR (send_gift_ts>1000 AND send_gift_ts<$oldRetryTime AND pct_done<100) ".
+                                    'ORDER BY id ASC LIMIT 1;')
+                        ->all();
+                    */
                 } catch (PDOException $ex) {
-                    $this->p('DB ERROR looking for giftcode: '.$ex->getMessage());
+                    $this->p(__METHOD__.' FATAL DB ERROR looking for giftcode to process: '.$ex->getMessage());
                     return;
                 }
+                if ( !empty($firstGiftCode) ) {
+                    $this->wos->stats = null;   // Clear out old stats
+                    $this->sendGift($firstGiftCode);
+                }
             }
-            $this->p('Sleeping 10...');
-            sleep(10);
-            return;
+            sleep(2); // Pause between checks
+            if ($this->wos->guzEmulate) {
+                #break;
+            }
         }
     }
 
@@ -124,22 +140,22 @@ $this->wos->guzEmulate = true;
         $giftCode = $gc['code'];
         $this->p("--- Sending giftcode=$giftCode alliance=".$this->wos->ourAlliance);
         $startTime = $this->wos->getTimestring(true,true);
-        $this->wos->stats = new GiftcodeStatistics();
-        $this->wos->stats->parseJsonStatistics($gc['statistics']);
+        $this->wos->stats = new GiftcodeStatistics($gc['statistics']);
         if ($this->wos->dbg) {
-            $this->pDebug('prevStats for this gift code',$gc);
+            $this->pDebug('prevStats=',$gc);
         }
 
-        return;
-
         // Update giftcode record to say we started
-        if ( $this->wos->updateGiftcodeStats($giftCode, $startTime) <1 ) {
-            $this->pExit('Could not update giftcodes table',500);
+        if ( $this->wos->updateGiftcodeStats($giftCode, 0, $startTime) <1 ) {
+            $this->p(__METHOD__.' Could not update giftcodes table');
+            return;
         }
 
         $httpReturnCode = 200;
         $errMsg = [];
         $n = 0; // # of players attempted
+        $pctDone = 0;
+        $numPlayers = 0;
         $xrlrPauseTime = 61; // sleep time when reaching x-ratelimit-remaining
         $this->wos->badResponsesLeft = 5; // Max bad responses (network error) from API before abort
         try {
@@ -151,23 +167,24 @@ $this->wos->guzEmulate = true;
                 $errMsg[] = 'No players in the database that still need that gift code.';
                 $httpReturnCode = 404;
             } else if ($this->wos->dbg) {
-                $this->p(__METHOD__." Found $numPlayers to process",'p',true);
+                $this->p("Found $numPlayers to process in ".$this->wos->ourAlliance,'p',true);
             }
             foreach ($allPlayers as $p) {
-                if ( $this->wos->badResponsesLeft<1 || !empty(static::$signalReceived) ) {
+                if ( $this->wos->badResponsesLeft<1 || !empty(WosCommon::$signalReceived) ) {
                     break;
                 }
                 $n++;
                 if ($this->wos->guzEmulate && $n>10) break; // Debug use
+                $pctDone = intval(100.0 * $n / $numPlayers);
 
                 usleep(100000); // 100msec slow-down between players
                 $signInResponse = $this->wos->verifyPlayerInWOS($p);
-                if ( is_null($signInResponse) || !empty(static::$signalReceived) ) {
+                if ( is_null($signInResponse) || !empty(WosCommon::$signalReceived) ) {
                     // Do not continue process, retryable API problem
                     break;
                 } else if ( ! $signInResponse['playerGood'] ) {
                     // Invalid sign-in, ignore this player
-                    $this->wos->updateGiftcodeStats($giftCode);
+                    $this->wos->updateGiftcodeStats($giftCode, $pctDone );
                     continue;
                 }
 
@@ -178,16 +195,22 @@ $this->wos->guzEmulate = true;
                     // Proactively sleep here
                     if ( ! $this->wos->guzEmulate ) {
                         sleep($xrlrPauseTime);
-                        if ( !empty(static::$signalReceived) ) {
-                            break;  // sleep interrupted, quit now
-                        }
                     }
+                }
+                if ( !empty(WosCommon::$signalReceived) ) {
+                    break;  // Got a signal: quit now before sending giftcode
                 }
 
                 // Clear to send gift code!
                 $giftResponse = $this->wos->send1Giftcode($p['id'],$giftCode);
-                if ( is_null($giftResponse)  || !empty(static::$signalReceived) ) {
-                    break;  // Do not continue process, API problem
+                if ( ! empty($giftResponse['expired']) ) {
+                    // Special case to never use this expired/invalid gift code
+                    $pctDone = -2;
+                    $giftResponse = null;
+                }
+                $this->wos->updateGiftcodeStats($giftCode, $pctDone );
+                if ( is_null($giftResponse)  || !empty(WosCommon::$signalReceived) ) {
+                    break;  // Do not continue process, API problem -- OR we got a signal
                 }
 
                 // API ratelimit: if it hits 0 we have to wait 1 minute
@@ -205,6 +228,9 @@ $this->wos->guzEmulate = true;
             }
         } catch (PDOException $ex) {
             $errMsg[] = __METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage();
+            if ($this->wos->dbg) {
+                $this->pDebug('exception=',$ex);
+            }
             $httpReturnCode = 500;
         } catch (Exception $ex) {
             $errMsg[] = __METHOD__.' <b>Exception:</b> '.$ex->getMessage();
@@ -215,18 +241,22 @@ $this->wos->guzEmulate = true;
         }
         if ( $this->wos->badResponsesLeft<1 ) {
             $errMsg[] = 'exceeded max bad responses.';
-            $httpReturnCode = 500;
+            $httpReturnCode = 502;
         }
-        $this->p("Processed $n players");
+        $this->p("Processed $n/$numPlayers players or $pctDone%");
         $this->wos->stats->runtime += $this->wos->getTimestring(true,true) - $startTime;
-        $this->wos->updateGiftcodeStats($giftCode,0);
         if ( $httpReturnCode>200 ) {
-            if ( $httpReturnCode>404 ) {
-                $errMsg[] = 'Incomplete run!';
+            if ( $n < $numPlayers ) {
+                $errMsg[] = '### Incomplete run!';
             }
-            $this->pExit($errMsg,$httpReturnCode);
+            foreach ($errMsg as $err) {
+                $this->p($err);
+            }
+        } else {
+            $this->p("### SUCCESS giftcode=$giftCode alliance=".$this->wos->ourAlliance);
         }
-        $this->p("### SUCCESS giftcode=$giftCode alliance=".$this->wos->ourAlliance);
+        $this->wos->updateGiftcodeStats($giftCode,$pctDone,0);
+        return $httpReturnCode;
     }
 
     ///////////////////////// Daemon helper functions
@@ -287,8 +317,8 @@ $this->wos->guzEmulate = true;
         if ( $signo == SIGHUP ) {
             print ">>> PID=$myPID ignoring signal $signo\n";
         } else if ( array_search($signo, static::$signalsToHandle) !== false ) {
-            print "### Daemon PID=$myPID received signal #".static::$signalReceived."\n";
-            static::$signalReceived = $signo;
+            print "### Daemon PID=$myPID received signal #$signo\n";
+            WosCommon::$signalReceived = $signo;
         }
 	}
 

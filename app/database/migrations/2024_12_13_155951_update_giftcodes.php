@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS "players"
     "created_at" datetime,
     "updated_at" datetime,
     "extra" text,
+    "giftcode_ids" text not null default '',
     primary key ("id"));
 
 CREATE TABLE IF NOT EXISTS "alliances"
@@ -31,7 +32,8 @@ CREATE TABLE IF NOT EXISTS "giftcodes"
     "statistics" text not null default '{}',
     "created_at" datetime,
     "updated_at" datetime,
-    "send_gift_ts" integer not null default '0');
+    "send_gift_ts" integer not null default '0',
+    "pct_done" integer not null default '100');
 CREATE UNIQUE INDEX "giftcodes_code_unique" on "giftcodes" ("code");
 
  */
@@ -46,14 +48,15 @@ class UpdateGiftcodes extends Database
      */
     public function up()
     {
-        if (!static::$capsule::schema()->hasColumn("giftcodes","send_gift_ts")) {
+        if (!static::$capsule::schema()->hasColumn("giftcodes","pct_done")) {
             static::$capsule::schema()->table("giftcodes", function (Blueprint $table) {
                 $table->integer('send_gift_ts')->default(0);
+                $table->integer('pct_done')->default(100);
             });
         }
         if (!static::$capsule::schema()->hasColumn("players","giftcode_ids")) {
             static::$capsule::schema()->table("players", function (Blueprint $table) {
-                $table->text('giftcode_ids')->nullable();
+                $table->text('giftcode_ids')->default('');
             });
         }
     }

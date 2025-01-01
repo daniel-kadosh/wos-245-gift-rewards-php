@@ -31,6 +31,8 @@ class WosCommon
     public $webMode;        // Whether running as a webpage or command-line
     public $myPID;
 
+    public static $signalReceived = NULL;   // Only used for daemon
+
 #    private $con;
 #    public function __construct($controllerObject) {
 #        $this->con = $controllerObject;
@@ -56,6 +58,7 @@ class WosCommon
 
         // Pull environment variables from .env file, with some default settings if not found
         $this->dbg          = strcasecmp(_env('APP_DEBUG',''),     'true') == 0;
+$this->dbg = 1;
         $this->guzEmulate   = strcasecmp(_env('GUZZLE_EMULATE',''),'true') == 0;
         $this->baseDataDir  = _env('BASE_DATA_DIR', __DIR__.'/../../wos245');
     }
@@ -66,7 +69,7 @@ class WosCommon
         $this->ourState         = ( empty($state) ? _env('OUR_STATE', 245) : $state );
         $this->dataDir          = sprintf('%s-%s/',$this->baseDataDir, strtolower($ourAlliance));
 
-        // Set up logger
+        // Set up logger only once
         if ( empty($this->log) ) {
             Config::set('log.dir', $this->webMode ? $this->dataDir : $this->baseDataDir.'/');
             Config::set('log.style','linux');
@@ -92,12 +95,16 @@ class WosCommon
 
     public function verifyPlayerInWOS( &$p ) {
         // Verify player
-        $this->p('<p>'.$p['id'].' - <b>'.$p['player_name'].'</b>: ',0,true);
+        $this->p(sprintf('<p>[%s] %s - <b>%s</b>: ',
+                    $this->ourAlliance, $p['id'], $p['player_name']), 0, true);
         $tries = 3;
         $signInGood = false;
         $sleepAmount = 0;
         while ($tries>0 && $this->badResponsesLeft>0) {
             sleep($sleepAmount);
+            if ( ! empty(static::$signalReceived) ) {
+                return null; // Only for daemon, stops whole process cleanly
+            }
             $sleepAmount = 0;
             $tries--;
             $signInResponse = $this->signInWOS($p['id']);
@@ -140,7 +147,7 @@ class WosCommon
             $this->p(sprintf('DELETING player: invalid %s</p>',
                             $stateID==-1 ? 'WOS user' : 'state (#'.$stateID.')'
                         ),0,true);
-            if ( $this->deleteById('players',$p['id']) == -1 ) {
+            if ( $this->deleteByID('players',$p['id']) == -1 ) {
                 // Exception thrown during delete, so let's just stop
                 return null;
             }
@@ -169,7 +176,7 @@ class WosCommon
         return $signInResponse;
     }
 
-    public function send1Giftcode($playerId,$giftCode) {
+    public function send1Giftcode($playerID,$giftCode) {
         // Won't check first that player hasn't received gift code, as that
         // should happen before calling this OR we need to resend to player
 
@@ -182,9 +189,13 @@ class WosCommon
                 // Only sleep at top of loop for retrying
                 sleep($sleepAmount);
             }
+            if ( ! empty(static::$signalReceived) ) {
+                return null; // Only for daemon: stops whole process cleanly
+            }
             $sleepAmount = 0;
             $tries--;
-            $giftResponse = $this->sendGiftCodeWOS($playerId,$giftCode);
+            $giftResponse = $this->sendGiftCodeWOS($playerID,$giftCode);
+            $giftResponse['expired'] = false;
             if ($this->dbg) {
                 $this->pDebug('giftResponse= ',$giftResponse);
             }
@@ -195,6 +206,7 @@ class WosCommon
                 $sleepAmount = $this->guzEmulate ? 0 : 2;
                 $this->p('(Network error: '.$giftResponse['msg']." - pause $sleepAmount sec.) ",0,true);
                 $this->badResponsesLeft--;
+                $giftErrCode = -1;
                 continue; // Retry
             }
             $giftErrCode = $giftResponse['err_code'];
@@ -202,13 +214,15 @@ class WosCommon
                 // Invalid gift code
                 $this->p('Aborting: Invalid gift code','b',true);
                 $this->stats->increment('giftErrorCodes','40014 Invalid gift code');
-                return null;
+                $giftResponse['expired'] = true;
+                return $giftResponse;
             }
             if ($giftErrCode == 40007) {
                 // Expired gift code
                 $this->p('Aborting: Gift code expired','b',true);
                 $this->stats->increment('giftErrorCodes','40007 Gift code expired');
-                return null;
+                $giftResponse['expired'] = true;
+                return $giftResponse;
             }
             $resetIn = 0;
             if ($giftErrCode == 40004) {
@@ -256,13 +270,16 @@ class WosCommon
             if ( $resetIn > 0 ) {
                 $msg = "$msg: ".$giftResponse['msg']." - pausing $resetIn sec.";
                 $this->p("($msg)",0,true);
-                $this->updatePlayerMessageGiftcodeID($playerId,null,$msg);
+                $this->updatePlayerMessageGiftcodeID($playerID,null,$msg);
                 $sleepAmount = $this->guzEmulate ? 1 : $resetIn;
             } else { // Success!
                 break;
             }
         }
         switch ($giftErrCode) {
+            case -1:    // Not a WOS code
+                $msg = "Network error";
+                break;
             case 20000:
                 $msg = "$giftCode: redeemed succesfully";
                 $sendGiftGood = true;
@@ -284,9 +301,8 @@ class WosCommon
                 break;
         }
         $this->p("$msg</p>",0,true);
-        $this->updatePlayerMessageGiftcodeID($playerId,
+        $this->updatePlayerMessageGiftcodeID($playerID,
                 ($sendGiftGood ? $this->getGiftcodeID($giftCode) : null),$msg);
-        $this->updateGiftcodeStats($giftCode);
 
         if ( ! $sendGiftGood ) {
             // Unless we know for sure we should continue to other players,
@@ -299,14 +315,13 @@ class WosCommon
     }
 
     ////////////////// Helper DB functions
-    public function updateGiftcodeStats($giftCode,$sendGiftTS=null) {
+    public function updateGiftcodeStats($giftCode,$pctDone=null,$sendgiftTS=null) {
         $params = [
             'updated_at' => $this->getTimestring(true,false),
             'statistics' => $this->stats->getJson()
         ];
-        if ( !is_null($sendGiftTS) ) {
-            $params['send_gift_ts'] = $sendGiftTS;
-        }
+        if ( !is_null($pctDone) )       $params['pct_done']     = $pctDone;
+        if ( !is_null($sendgiftTS) )    $params['send_gift_ts'] = $sendgiftTS;
         $rowsUpdated = 0;
         try {
             $rowsUpdated = db()
@@ -320,7 +335,7 @@ class WosCommon
         }
         return $rowsUpdated;
     }
-    public function updatePlayerMessageGiftcodeID($playerId,$giftCodeID,$msg) {
+    public function updatePlayerMessageGiftcodeID($playerID,$giftCodeID,$msg) {
         $params = [
             'last_message'  => $msg,
             'updated_at'    => $this->getTimestring(true,false)
@@ -328,7 +343,7 @@ class WosCommon
         if ( !empty($giftCodeID) ) {
             $player = db()
                 ->select('players')
-                ->find($playerId);
+                ->find($playerID);
             $extra = new PlayerExtra($player['extra']);
             if ( $extra->addGiftcodeID($giftCodeID) ) {
                 $params['giftcode_ids'] = $extra->getGiftcodeIDs();
@@ -336,33 +351,40 @@ class WosCommon
         }
         db()->update('players')
             ->params($params)
-            ->where(['id' => $playerId])
+            ->where(['id' => $playerID])
             ->execute();
     }
     public function getGiftcodeID($giftCode) {
-        static $giftCodes = [];
+        static $giftCodes = [];  // Cache giftcodeIDs by alliance/database
         $gcIndex = sprintf('%s-%s',$this->ourAlliance,$giftCode);
-        if ( !empty($giftCodes[$gcIndex]) ) {
-            return $giftCodes[$gcIndex];
+        if ( empty($giftCodes[$gcIndex]) ) {
+            $giftCodes[$gcIndex] = db()  //->query("select id from giftcodes where code='$giftCode'");
+                ->select('giftcodes','id')
+                ->where('code','=',$giftCode)
+                ->fetchAssoc()['id'];
         }
-        $giftCodes[$gcIndex] = db()
-            ->select('giftcodes','id')
-            ->where(['code' => $giftCode])
-            ->first();
         return $giftCodes[$gcIndex];
     }
     public function getPlayersForGiftcode($giftCode,$countOnly=true) {
-        $giftCodeID = $this->getGiftcodeID($giftCode);
+        if ( ! is_null($giftCode) ) {
+            // Have to do this query before assembling the query below
+            $giftCodeID = PlayerExtra::delimitGiftCodeID($this->getGiftcodeID($giftCode));
+        }
+        #$this->p(__METHOD__." gc=$giftCode count=".intval($countOnly)." gcID=$giftCodeID",0,true);
         $playerQuery = db()
-            ->select('players')
-            ->where('last_message', 'not like', $giftCode.': %') // Could remove this at some point
-            ->where('giftcode_ids', 'not like', "%|$giftCodeID|%")
+            ->select('players', ($countOnly ? 'count(id)' : '*'))
             ->where('extra', 'not like', '%ignore":1%');
-        return ( $countOnly ? $playerQuery->count() :
+        if ( ! is_null($giftCode) ) {
+            $playerQuery = $playerQuery
+                ->where('last_message', 'not like', "$giftCode: %") // Could get rid of this at some point
+                ->where('giftcode_ids', 'not like', "%$giftCodeID%");
+        }
+        return ( $countOnly ?
+                        $playerQuery->fetchAssoc()['count(id)'] :
                         $playerQuery->orderBy('id','asc')->all() );
     }
 
-    public function deleteById($table,$id) {
+    public function deleteByID($table,$id) {
         try {
             $result = db()
                 ->delete($table)
@@ -398,7 +420,7 @@ class WosCommon
     }
 
     public function logInfo($msg) {
-        $this->log->info( $this->myPID.') '.str_replace("\t"," ",trim(strip_tags($msg))) );
+        $this->log->info( $this->myPID.') '.str_replace("\n"," ",trim(strip_tags($msg))) );
     }
 
 

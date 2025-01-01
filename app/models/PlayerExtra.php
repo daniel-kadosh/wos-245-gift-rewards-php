@@ -80,10 +80,10 @@ class PlayerExtra {
         // Drop-down selection:
         $ret = sprintf('<select name="%s" id="%s%s">',
             $field, ($isFilter ? 'f:' : ''), $field );
-        $targetId = (isset($options[$this->$field]) ? $this->$field : 0);
+        $targetID = (isset($options[$this->$field]) ? $this->$field : 0);
         foreach ($options as $id => $name) {
             $ret .= sprintf( '<option value="%d"%s>%s</option>',
-                        $id,($id==$targetId ? ' selected' : ''),$name );
+                        $id,($id==$targetID ? ' selected' : ''),$name );
         }
         $ret .= '</select>';
         return $ret;
@@ -137,15 +137,19 @@ class PlayerExtra {
     }
 
     // Special field functions
+    public static function delimitGiftCodeID($giftCodeID) {
+        // Single place in code where we define delimiters for a string of IDs
+        return "@$giftCodeID@";
+    }
     public function getGiftcodeIDs() {
         return $this->giftcode_ids;
     }
     public function hasGiftcodeID($giftCodeID) {
-        return strstr($this->giftcode_ids,"|$giftCodeID|") ? true : false;
+        return strstr($this->giftcode_ids,self::delimitGiftCodeID($giftCodeID)) ? true : false;
     }
     public function addGiftcodeID($giftCodeID) {
         if ( ! $this->hasGiftcodeID($giftCodeID) ) {
-            $this->giftcode_ids .= "|$giftCodeID|";
+            $this->giftcode_ids .= self::delimitGiftCodeID($giftCodeID);
             return true;
         }
         return false;
