@@ -49,9 +49,9 @@ class GiftcodeDaemonCommand extends Command
 		$this->wos->myPID = posix_getpid();
         $this->comment("=== Starting up Giftcode daemon PID=".$this->wos->myPID);
 
-// While developing, force full debug mode
-$this->wos->dbg = true;
-$this->wos->guzEmulate = true;
+        // While developing, force full debug mode
+        #$this->wos->dbg = true;
+        #$this->wos->guzEmulate = true;
 
         // Run under the correct username and set up PID file, BEFORE writing to log file
         $this->switchUser($this->argument('username'));
@@ -91,13 +91,10 @@ $this->wos->guzEmulate = true;
                 }
 
                 // Switch alliance and process
-                #$allianceShort = strtolower($alliance);
                 $this->wos->setAllianceState($alliance);
                 try {
-                    if ($this->wos->guzEmulate) {
-                        print substr($alliance,0,1);
-                        #$this->p("@-Checking for giftcode to send for [$alliance]$allianceLong");
-                    }
+                    #if ($this->wos->guzEmulate) print substr($alliance,0,1);
+
                     // Process giftcodes FIFO
                     // Rely on user to explicitly retry previous partial aborted run, where
                     // web interface sets pct_done=-1
@@ -118,6 +115,7 @@ $this->wos->guzEmulate = true;
                         ->all();
                     */
                 } catch (PDOException $ex) {
+                    // This executes at the very start, so abort immediately on DB error
                     $this->p(__METHOD__.' FATAL DB ERROR looking for giftcode to process: '.$ex->getMessage());
                     return;
                 }
@@ -125,11 +123,36 @@ $this->wos->guzEmulate = true;
                     $this->wos->stats = null;   // Clear out old stats
                     $this->sendGift($firstGiftCode);
                 }
+
+                // Auto-Expire giftcodes older than 14 days
+                // Check once a day at 4am+
+                $now = intval( $this->wos->getTimestring(true) );
+                if ( empty($lastCheck[$alliance]) ) {
+                    $yesterday4am = $this->wos->time
+                            ->subtract(1,'day')
+                            ->format('YYYY-MM-DD').' 04:00:00';
+                    $lastCheck[$alliance] = intval( tick($yesterday4am)->format('U') );
+                }
+                if ( $now - $lastCheck[$alliance] > 24*3600 ) {
+                    $today4am = tick( $this->wos->time->format('YYYY-MM-DD').' 04:00:00' );
+                    $lastCheck[$alliance] = intval( $today4am->format('U') );
+                    $prev2wk = $today4am
+                            ->subtract(14,'day')
+                            ->format('YYYY-MM-DD HH:mm:ss');
+
+                    $numRows = db()->update('giftcodes')
+                        ->params(['pct_done' => -2])
+                        ->where('pct_done',100)     // Only full runs
+                        ->where('send_gift_ts',0)   // REALLY ensure not running
+                        ->where('updated_at','<',$prev2wk)
+                        ->execute()
+                        ->rowCount();
+                    if ($numRows>0) {
+                        $this->p("$alliance: Expired $numRows giftcodes older than ".$prev2wk);
+                    }
+                }
             }
             sleep(2); // Pause between checks
-            if ($this->wos->guzEmulate) {
-                #break;
-            }
         }
     }
 

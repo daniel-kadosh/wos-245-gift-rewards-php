@@ -58,7 +58,6 @@ class WosCommon
 
         // Pull environment variables from .env file, with some default settings if not found
         $this->dbg          = strcasecmp(_env('APP_DEBUG',''),     'true') == 0;
-$this->dbg = 1;
         $this->guzEmulate   = strcasecmp(_env('GUZZLE_EMULATE',''),'true') == 0;
         $this->baseDataDir  = _env('BASE_DATA_DIR', __DIR__.'/../../wos245');
     }

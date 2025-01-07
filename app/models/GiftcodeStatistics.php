@@ -97,4 +97,35 @@ class GiftcodeStatistics {
         }
         return 0; // Undefined?
     }
+    public function stateOfGiftCodeHTML( &$giftCodeObject, $withJobTS=false) {
+        $stateFormat = '<b><span style="color:%s">%s</span></b>';
+        $pctDone = ' %d%% done';
+        $jobTS = $withJobTS ? "</br>".gmdate("Y-m-d H:i:s",$giftCodeObject['send_gift_ts']) : '';
+        switch ( self::stateOfGiftCode($giftCodeObject) ) {
+            case self::GC_QUEUED:     // 1) hasn't started
+                $msg = sprintf($stateFormat.$pctDone,'#007000','QUEUED',0);
+                #$this->p("QUEUED $updateHMS ago. Hasn't started processing, expecting $numPlayers players.",'p',true);
+                break;
+            case self::GC_RUNNING:    // 2) still processing
+                $msg = sprintf($stateFormat.$pctDone.$jobTS,'#007000','RUNNING',$giftCodeObject['pct_done']);
+                #$this->p("RUNNING for $startHMS, $pctDone done, at $numPlayers/$origNumPlayers players.",'p',true);
+                break;
+            case self::GC_QUIT:       // 3) Quit mid-process, restart if users to process
+                $msg = sprintf($stateFormat.$pctDone,'#700000','QUIT',$giftCodeObject['pct_done']);
+                #$msg = "QUIT last run at $pctDone done for $origNumPlayers players";
+                break;
+            case self::GC_DONE:       // 4) Already done, restart if users to process
+                $msg = sprintf($stateFormat.$pctDone,'#000070','SENT',100);
+                #$msg = 'FULLY COMPLETED previously';
+                break;
+            case self::GC_EXPIRED:       // 4) Already done, restart if users to process
+                $msg = sprintf($stateFormat,'#000070','EXPIRED');
+                #$this->p("EXPIRED or invalid gift code as of last check on $updateHMS.",'p',true);
+                break;
+            default:
+                $msg = sprintf($stateFormat,'#A00000','UNKNOWN');
+                break;
+        }
+        return $msg;
+    }
 }

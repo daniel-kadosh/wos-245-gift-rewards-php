@@ -34,10 +34,11 @@ class WosController extends Controller {
             'alliance_id'   => 'Alliance',
             'ignore'        => 'Ignore'
         ];
-    const GIFTCODE_COLUMNS = [
+    const GIFTCODE_COLUMNS_STATS = [
             'ID'                => 'id',
             'First Sent UTC'    => 'created_at',
             'Giftcode'          => 'code',
+            'Status'            => ':State',
             'WebUser'           => 'usersSending',
             'Succesful'         => 'succesful',
             'Had Gift'          => 'alreadyReceived',
@@ -49,6 +50,17 @@ class WosController extends Controller {
             'networkError'      => 'networkError',
             'signinErrorCodes'  => 'signinErrorCodes',
             'giftErrorCodes'    => 'giftErrorCodes',
+        ];
+        const GIFTCODE_COLUMNS = [
+            'ID'                => 'id',
+            'Last Sent UTC'     => 'updated_at',
+            'Giftcode'          => ':Code',
+            'Status'            => ':State',
+            'WebUser'           => 'usersSending',
+            'Succesful'         => 'succesful',
+            'Had Gift'          => 'alreadyReceived',
+            'Expected'          => 'expected',
+            'Deleted Players'   => 'deletedPlayers',
         ];
 
     private $wos;
@@ -503,38 +515,39 @@ class WosController extends Controller {
                 $pctDone         = $gc['pct_done'].'%';
 
                 $resetPctDone = false;
+                $statusMsg = $this->wos->stats->stateOfGiftCodeHTML($gc);
                 switch ( GiftcodeStatistics::stateOfGiftCode($gc) ) {
                     case GiftcodeStatistics::GC_QUEUED:     // 1) hasn't started
-                        $this->p("QUEUED $updateHMS ago. Hasn't started processing, expecting $numPlayers players.",'p',true);
+                        $this->p("$statusMsg $updateHMS ago. <br/>Hasn't started processing, expecting $numPlayers players.",'p',true);
                         break;
                     case GiftcodeStatistics::GC_RUNNING:    // 2) still processing
-                        $this->p("RUNNING for $startHMS, $pctDone done, at $numPlayers/$origNumPlayers players.",'p',true);
+                        $this->p("$statusMsg at $startHMS <br/>with $numPlayers/$origNumPlayers players.",'p',true);
                         break;
                     case GiftcodeStatistics::GC_QUIT:       // 3) Quit mid-process, restart if users to process
                         $timeSinceUpdate = 0;
                         $resetPctDone = ($numPlayers>0 ? -1 : 100);
-                        $msg = "QUIT last run at $pctDone done for $origNumPlayers players";
+                        $msg = "$statusMsg for $origNumPlayers players";
                         break;
                     case GiftcodeStatistics::GC_DONE:       // 4) Already done, restart if users to process
                         $timeSinceUpdate = 0;
                         $resetPctDone = ($numPlayers>0 ? -1 : 100);
-                        $msg = 'FULLY COMPLETED previously';
+                        $msg = "$statusMsg and fully completed";
                         break;
                     case GiftcodeStatistics::GC_EXPIRED:       // 4) Already done, restart if users to process
                         $timeSinceUpdate = 0;
-                        $this->p("EXPIRED or invalid gift code as of last check on $updateHMS.",'p',true);
+                        $this->p("$statusMsg or invalid gift code as of last check on ".$gc['updated_at'],'p',true);
                         break;
                     default:
-                        $this->pDebug('UNKNOWN state of giftcode!',$gc);
                         $timeSinceUpdate = 0;
+                        $this->pDebug("$statusMsg state of giftcode!",$gc);
                         break;
                 }
                 if ( $timeSinceUpdate >= 300 ) { // 5min is too long to wait
                     $this->p("WARNING: It's been too long, something is probably wrong with the giftcode daemon!",'p',true);
                 } else if ( $resetPctDone ) {
-                    $this->p(sprintf('%s, %s.', $msg,
-                                $numPlayers>0 ? "re-queing job for $numPlayers players" :
-                                                "and now no players need it")
+                    $this->p(sprintf('%s.<br/>%s.', $msg,
+                                $numPlayers>0 ? "Re-QUEING job for $numPlayers players" :
+                                                "Currently no players need it")
                             ,'p',true);
                     $this->wos->updateGiftcodeStats($giftCode,$resetPctDone,0);
                 }
@@ -791,35 +804,77 @@ class WosController extends Controller {
      */
     public function giftcodes() {
         $this->htmlHeader('== Sent Giftcode List');
-        $this->p('This is a summary of the last 10 gift codes sent in the past','p');
+        /////////////////////// URL param validation
+        $num = intval( request()->params('num',10) );
+        if ( $num<0  ) $num=1;
+        if ( $num>200) $num=200;
+        $fullstats = intval(request()->params('fullstats',0));
+        if ( $fullstats!=0 ) $fullstats=1;
+        $gcColumns = ( $fullstats ? self::GIFTCODE_COLUMNS_STATS : self::GIFTCODE_COLUMNS );
+
+        ////////// Filters
+        $this->p('<table><tr><form>');
+        $this->p('<b>Filters:</b>','td');
+        $f = 'Statistics=<select name="fullstats" id="f:fullstats">';
+        foreach (['brief','full'] as $n => $val) {
+            $f .= sprintf('<option value="%d"%s>%s</option>',
+                    $n, ($n==$fullstats ? ' selected' : ''), $val);
+        }
+        $this->p("$f</select>",'td');
+        $this->p(sprintf('Number to list=<input type="text" id="num" name="num" size="3" value="%d">',
+                    $num),'td');
+        $this->p('<input type="submit" value="Apply">','td');
+        $this->p('</form>');
+        $this->p('<input type="submit" value="Reset" formmethod="get"'.
+                            ' onclick="return gotoURL(\'/giftcodes\')" />'
+                        ,'td');
+        $this->p('</tr></table>');
+
+        //////// Main table
         $this->p('<table><tr>');
-        foreach (array_keys(self::GIFTCODE_COLUMNS) as $colName) {
+        foreach (array_keys($gcColumns) as $colName) {
             $this->p("<u>$colName</u>",'th');
         }
         $this->p('</tr>');
         try {
-            $allGiftcodes = db()
+            $query = db()
                 ->select('giftcodes')
-                ->orderBy('id','desc')
-                ->limit(10)
-                ->all();
+                ->orderBy('id','desc');
+            if ( $num ) {
+                $query = $query->limit($num);
+            }
+            $allGiftcodes = $query->all();
             $stats = new GiftcodeStatistics();
             $i=0;
-            foreach ($allGiftcodes as $a) {
-                if ($i++==0 || $a['pct_done']<100) $this->pDebug('First=',$a);
-                $stats->parseJsonStatistics($a['statistics']);
-                unset($a['statistics']);
-                $a = array_merge($a, (array) $stats);
+            foreach ($allGiftcodes as $gc) {
+                #if ($i++==0 || $gc['pct_done']<100) $this->pDebug('First=',$gc);
+                $stats->parseJsonStatistics($gc['statistics']);
+                unset($gc['statistics']);
+                $gc = array_merge($gc, (array) $stats);
                 $this->p('<tr>');
-                foreach (self::GIFTCODE_COLUMNS as $col) {
-                    $val = $a[$col];
-                    $type = is_array($val) ? 'array' : (is_numeric($val) ? 'num' : 'string');
+                foreach ($gcColumns as $col) {
+                    if ( substr($col,0,1)==':' ) {
+                        $type = $col;
+                    } else {
+                        $val = $gc[$col];
+                        $type = is_array($val) ? 'array' : (is_numeric($val) ? 'num' : 'string');
+                    }
                     switch ($type) {
-                        case 'num':
-                            $this->p('<td style="text-align: center;">'.$val.'</td>');
+                        case ':Code':
+                            $val = $gc['code'];
+                            if ( $gc['pct_done']>=0 && $gc['pct_done']<=100 ) {
+                                $val = sprintf('<a href="/send/%s">%s</a>', $val, $val);
+                            }
+                            $this->p("<b>$val</b>",'td');
+                            break;
+                        case ':State':
+                            $this->p($stats->stateOfGiftCodeHTML($gc, $fullstats),'td');
                             break;
                         case 'string':
                             $this->p("<b>$val</b>",'td');
+                            break;
+                        case 'num':
+                            $this->p('<td style="text-align: center;">'.$val.'</td>');
                             break;
                         case 'array':
                             $this->p('<td>');
