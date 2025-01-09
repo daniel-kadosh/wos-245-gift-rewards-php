@@ -344,6 +344,7 @@ class WosCommon
                 ->select('players')
                 ->find($playerID);
             $extra = new PlayerExtra($player['extra']);
+            $extra->setGiftcodeIDs($player['giftcode_ids']);
             if ( $extra->addGiftcodeID($giftCodeID) ) {
                 $params['giftcode_ids'] = $extra->getGiftcodeIDs();
             }

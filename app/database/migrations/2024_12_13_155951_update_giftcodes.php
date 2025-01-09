@@ -59,6 +59,29 @@ class UpdateGiftcodes extends Database
                 $table->text('giftcode_ids')->default('');
             });
         }
+
+        /* PDO somehow doesn't like these queries, so run manually with sqlite3 client
+         *
+        CREATE temporary table 'foo' as
+                    SELECT id as pid,substr(last_message,1,instr(last_message,':')-1) as code
+                        from players
+                        where last_message like '%: redeemed succesfully'
+                            or last_message like '%: already used';
+
+        UPDATE players set giftcode_ids='@'
+            FROM (select p.id from players p
+                    left join foo on foo.pid=p.id
+                    where foo.pid is null) as f
+            where f.id=players.id and players.giftcode_ids='';
+
+        UPDATE players set giftcode_ids=f.gid
+                    FROM (SELECT pid,concat('@',g.id,'@') as gid from foo
+                            join giftcodes g on g.code=foo.code) as f
+                            where f.pid=players.id and giftcode_ids='';
+
+        drop table foo;
+
+        */
     }
 
     /**

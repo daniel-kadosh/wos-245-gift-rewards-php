@@ -19,6 +19,8 @@ class PlayerExtra {
     const F_ALLIANCE = 4; // "join" with alliance_id from database
     const F_BOOLEAN  = 6;
 
+    const GC_DELIMITER = '@';
+
     private $log;
     private $fields = [
         'alliance_id'   => self::F_ALLIANCE,
@@ -93,7 +95,7 @@ class PlayerExtra {
      * Set or replace object values
      * @param string $extra     JSON string stored in 'extra' DB column
      */
-    public function parseJsonExtra($extra) {
+    public function parseJsonExtra($extra,$giftCodeIDs=null) {
         // First reset everything to defaults
         foreach ($this->fields as $field => $type) {
             $this->$field = ($type==self::F_STRING ? '' :
@@ -112,6 +114,9 @@ class PlayerExtra {
         } catch (\Exception $e) {
             $this->log->info(__METHOD__.' Exception: '.$e->getMessage());
             $this->log->info('extra='.$extra);
+        }
+        if ( !empty($giftCodeIDs) ) {
+            $this->giftcode_ids = $giftCodeIDs;
         }
     }
 
@@ -139,7 +144,10 @@ class PlayerExtra {
     // Special field functions
     public static function delimitGiftCodeID($giftCodeID) {
         // Single place in code where we define delimiters for a string of IDs
-        return "@$giftCodeID@";
+        return self::GC_DELIMITER.$giftCodeID.self::GC_DELIMITER;
+    }
+    public function setGiftcodeIDs($gids) {
+        $this->giftcode_ids = $gids;
     }
     public function getGiftcodeIDs() {
         return $this->giftcode_ids;
@@ -149,7 +157,10 @@ class PlayerExtra {
     }
     public function addGiftcodeID($giftCodeID) {
         if ( ! $this->hasGiftcodeID($giftCodeID) ) {
-            $this->giftcode_ids .= self::delimitGiftCodeID($giftCodeID);
+            $gids = $this->giftcode_ids.self::delimitGiftCodeID($giftCodeID);
+            $this->giftcode_ids = str_replace(self::GC_DELIMITER.self::GC_DELIMITER,
+                    self::GC_DELIMITER,
+                    $gids);
             return true;
         }
         return false;

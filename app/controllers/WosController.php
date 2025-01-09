@@ -365,7 +365,7 @@ class WosController extends Controller {
                 #->orderBy("$dbSort COLLATE NOCASE",$dir)
                 ->all();
             foreach ($allPlayers as $key => $p) {
-                $pe->parseJsonExtra($p['extra']);
+                $pe->parseJsonExtra($p['extra'],$p['giftcode_ids']);
                 foreach ($filters as $col => $val) {
                     if ($pe->$col != $val) {
                         unset($allPlayers[$key]);
@@ -409,6 +409,7 @@ class WosController extends Controller {
                             break;
                         case 'id' :
                         case 'last_message' :
+                        case 'giftcode_ids' :
                         case 'updated_at':
                             $this->p($p[$col],'td');
                             break;
@@ -666,6 +667,7 @@ class WosController extends Controller {
                 $this->p('Updated: <b>'.$playerData['player_name'].'</b>','p',true);
                 unset($playerData['extra']);
                 $playerData['updated_at'] = $data['updated_at'];
+                $pe->setGiftcodeIDs($playerData['giftcode_ids']);
                 $data = array_merge($playerData,$pe->getArray(true));
                 $this->pDebug('Details',$data);
             } else {
@@ -764,6 +766,7 @@ class WosController extends Controller {
                 // Dump single player data
                 $pe = new PlayerExtra($playerData['extra'],true);
                 unset($playerData['extra']);
+                $pe->setGiftcodeIDs($playerData['giftcode_ids']);
                 $playerData = array_merge($playerData,$pe->getArray(true));
                 $this->pDebug('<b>Results</b>',$playerData);
             } else if ($n==$numPlayers) {
@@ -956,7 +959,7 @@ class WosController extends Controller {
 
             $pe = new PlayerExtra('',true);
             foreach ($allPlayers as $key => $p) {
-                $pe->parseJsonExtra($p['extra']);
+                $pe->parseJsonExtra($p['extra'],$p['giftcode_ids']);
                 unset($p['extra']);
                 $allPlayers[$key] = array_merge($p,$pe->getArray(true));
             }
