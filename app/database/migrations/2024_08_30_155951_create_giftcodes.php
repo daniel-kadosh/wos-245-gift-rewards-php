@@ -7,7 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 CREATE TABLE IF NOT EXISTS "giftcodes" (
     "id" integer not null primary key autoincrement,
     "code" varchar not null,
-    "player_count" integer not null default '0',
+    "statistics" longtext not null default '{}',
     "created_at" datetime,
     "updated_at" datetime
 );

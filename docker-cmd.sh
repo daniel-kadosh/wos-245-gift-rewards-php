@@ -20,6 +20,7 @@ IFS=','
 read -ra array <<< "$ALLIANCES"
 echo "Setting up data dirs + DBs for $ALLIANCES"
 for alliance in "${array[@]}"; do
+    set -e
     DIR=/var/www/wos245-"${alliance,,}"
     mkdir -p ${DIR}
     export DB_DATABASE=${DIR}/gift-rewards.db
@@ -28,5 +29,10 @@ for alliance in "${array[@]}"; do
     find ${DIR} -type d -exec chmod 0777 {} \;
     find ${DIR} -type f -exec chmod 0666 {} \;
     php leaf db:migrate -vvv
-done && \
-apache2-foreground
+done
+
+# Start Apache first, then giftcode-processing daemon
+# 'wos.sh -o' will gracefully stop both for container shutdown
+apache2-foreground &
+rm -f /var/www/wos245/giftcoded.pid
+exec php leaf giftcode:daemon

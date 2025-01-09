@@ -89,7 +89,14 @@ function wos-start() {
 
 function wos-stop() {
     echo "Stopping"
+    PIDFILE='wos245/giftcoded.pid'
     set -x
+    # Couldn't get docker to send signals to running processes, so
+    # stop Apache + daemon "manually" and then clean up with docker compose
+    ${CMD_PREFIX} docker compose exec ${DOCKER_APP_NAME} apachectl stop
+    if [ -f ${PIDFILE} ]; then
+        ${CMD_PREFIX} docker compose exec ${DOCKER_APP_NAME} kill `cat ${PIDFILE}`
+    fi
     ${CMD_PREFIX} docker compose down --remove-orphans ${DOCKER_APP_NAME}
 }
 

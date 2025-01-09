@@ -2,15 +2,17 @@
 
 namespace App\Controllers;
 
-use GuzzleHttp\Client;
-use Leaf\Config;
+use App\Helpers\WosCommon;
+use App\Models\GiftcodeStatistics;
+use App\Models\PlayerExtra;
+use Exception;
 use Leaf\Controller;
 use Leaf\Http\Request;
-use Leaf\Log;
 use PDOException;
 
+#declare(ticks=1);
+
 class WosController extends Controller {
-    const HASH          = "tB87#kPtkxqOS2"; // WOS API secret
     const DIGEST_REALM  = 'wos245';         // Apache digest auth realm
     const LIST_COLUMNS  = [                 // Column labels to DB field names
             'ID'                => 'id',
@@ -32,10 +34,11 @@ class WosController extends Controller {
             'alliance_id'   => 'Alliance',
             'ignore'        => 'Ignore'
         ];
-    const GIFTCODE_COLUMNS = [
+    const GIFTCODE_COLUMNS_STATS = [
             'ID'                => 'id',
             'First Sent UTC'    => 'created_at',
             'Giftcode'          => 'code',
+            'Status'            => ':State',
             'WebUser'           => 'usersSending',
             'Succesful'         => 'succesful',
             'Had Gift'          => 'alreadyReceived',
@@ -48,73 +51,44 @@ class WosController extends Controller {
             'signinErrorCodes'  => 'signinErrorCodes',
             'giftErrorCodes'    => 'giftErrorCodes',
         ];
-    private $time = null;   // tick() DateTime object
-    private $guz;           // Guzzle HTTP client object
-    private $stats;         // giftCodeStatistics object
-    private $log;           // Leaf logger
-    private $dbg;           // boolean: true if APP_DEBUG for verbose logging
-    private $guzEmulate;    // boolean: true if GUZZLE_EMULATE to not make WOS API calls
-    private $badResponsesLeft;  // Number of questionable bad responses from WOS API before abort
-    private $dataDir;       // For a number of files used by the app or Apache
-    private $ourAlliance;  // 3-letter alliance name
-    private $ourAllianceLong;
-    private $ourState;     // WOS state number
+        const GIFTCODE_COLUMNS = [
+            'ID'                => 'id',
+            'Last Sent UTC'     => 'updated_at',
+            'Giftcode'          => ':Code',
+            'Status'            => ':State',
+            'WebUser'           => 'usersSending',
+            'Succesful'         => 'succesful',
+            'Had Gift'          => 'alreadyReceived',
+            'Expected'          => 'expected',
+            'Deleted Players'   => 'deletedPlayers',
+        ];
+
+    private $wos;
 
     public function __construct() {
         // Init the framework
         parent::__construct();
         $this->request = new Request;
-
+        $this->wos = new WosCommon();
 
         // Determine OUR_ALLIANCE from URL hostname (1st string in FQDN)
-        $this->ourState= _env('OUR_STATE', 245);
-        $alliances      = explode(',',_env('ALLIANCES',     'VHL'));      // 3-letter names
-        $alliancesLong  = explode(',',_env('ALLIANCES_LONG','Valhalla')); // long names
-        for ($i=0; $i<count($alliances); $i++) {
-            $host2Alliance[$alliances[$i]] = [
-                strtolower($alliances[$i]),
-                strtolower($alliances[$i]).$this->ourState,
-                strtolower($alliancesLong[$i]),
-                strtolower($alliancesLong[$i]).$this->ourState,
-            ];
-            $alliance2Long[$alliances[$i]] = $alliancesLong[$i];
-        }
         $fqdn_parts = explode('.', strtolower($_SERVER['HTTP_HOST']));
-        $this->ourAlliance = array_keys($host2Alliance)[0];
-        foreach ($host2Alliance as $alliance => $hostnames) {
+        $ourAlliance = array_keys($this->wos->host2Alliance)[0];    // Default to 1st alliance
+        foreach ($this->wos->host2Alliance as $alliance => $hostnames) {
             if ( in_array($fqdn_parts[0], $hostnames) ) {
-                $this->ourAlliance = $alliance;
-                $this->ourAllianceLong = $alliance2Long[$alliance];
+                $ourAlliance = $alliance;
                 break;
             }
         }
+        // This will finalize configs for logging, database
+        $this->wos->setAllianceState($ourAlliance);
 
-        // Pull environment variables from .env file, with some default settings if not found
-        $this->dbg          = strcasecmp(_env('APP_DEBUG',''),     'true') == 0;
-        $this->guzEmulate   = strcasecmp(_env('GUZZLE_EMULATE',''),'true') == 0;
-        $base_data_dir      = _env('BASE_DATA_DIR', __DIR__.'/../../wos245');
-        $this->dataDir      = sprintf('%s-%s/',$base_data_dir, strtolower($this->ourAlliance));
-
-        // Set up logger
-        Config::set('log.style','linux');
-        Config::set('log.dir', $this->dataDir);
-        Config::set('log.file', 'wos_controller_'.
-            substr($this->getTimestring(false,false),0,7).'.log');
-        $this->log = app()->logger();
-        $this->log->level( $this->dbg ? Log::DEBUG : Log::INFO );
-
+        // If Apache's digest auth didn't set REMOTE_USER, we have no auth
         if ( empty($_SERVER['REMOTE_USER']) ) {
-            # If Apache's digest auth didn't set REMOTE_USER, we have no auth
             $this->pExit('Auth failure, misconfiguration?',403);
         }
-        $this->logInfo( '=== '.$this->request->getUrl().$_SERVER['REQUEST_URI'].'  user='.$_SERVER['REMOTE_USER'] );
+        $this->wos->logInfo('=== '.$this->request->getUrl().$_SERVER['REQUEST_URI'].'  user='.$_SERVER['REMOTE_USER']);
 
-        # Database, Guzzle
-        $dbfile = sprintf('%s-%s/gift-rewards.db',$base_data_dir, strtolower($this->ourAlliance));
-        putenv("DB_DATABASE=$dbfile");
-        db()->autoConnect();
-        $this->guz = new Client(['timeout'=>10]); // Guzzle outbound HTTP client
-        #print "<pre>DBFILE=$dbfile\n</pre>";
         #phpinfo(INFO_ALL);
     }
 
@@ -135,10 +109,10 @@ class WosController extends Controller {
             'Send a reward','to send ALL players the giftcode if they don\'t have it yet.'.
             '<br/><b>NOTE:</b> page will take 2-5 minutes to show anything, let it run and wait!'.
             '<br/>Player will be verified with WOS and <b>DELETED</b> if not found or not in state #'.
-            $this->ourState.'.'),'tr');
+            $this->wos->ourState.'.'),'tr');
         $this->p(sprintf($lineFormat,'add/','add/','[playerID]',
-            'Add a player','Will get basic player info from WOS and check they are in state #'.$this->ourState.
-            '.<br/>By default will add in alliance ['.$this->ourAlliance.'] but you can change afterwards.'),'tr');
+            'Add a player','Will get basic player info from WOS and check they are in state #'.$this->wos->ourState.
+            '.<br/>By default will add in alliance ['.$this->wos->ourAlliance.'] but you can change afterwards.'),'tr');
         $this->p(sprintf($lineFormat,'remove/','remove/','[playerID]',
             'Remove a player','If you change your mind after removing, just add again <b>;-)</b>'),'tr');
         $this->p(sprintf($lineFormat,'updateFromWOS/','updateFromWOS/','[playerID|ignore]',
@@ -199,7 +173,7 @@ class WosController extends Controller {
             if ( $n==0 ) {
                 $this->p('No alliances in the database!','p');
             }
-            $this->logInfo("Listed $n alliances");
+            $this->wos->logInfo("Listed $n alliances");
 
             $this->p("We only need the alliances that our players are in, ".
                     "so that the player list has this information.<br/>".
@@ -253,7 +227,7 @@ class WosController extends Controller {
     public function allianceUpdate($alliance_id) {
         $this->htmlHeader('== Update Alliance');
         try {
-            $id = $this->validateId($alliance_id);
+            $id = $this->validateID($alliance_id);
             $allianceData = db()
                 ->select('alliances')
                 ->find($id);
@@ -283,7 +257,7 @@ class WosController extends Controller {
      */
     public function allianceRemove($alliance_id) {
         $this->htmlHeader('== Remove Alliance');
-        $id = $this->validateId($alliance_id);
+        $id = $this->validateID($alliance_id);
         $result = db()
             ->select('alliances')
             ->find($id);
@@ -291,7 +265,7 @@ class WosController extends Controller {
             $this->pExit("Alliance id=$id not found",404);
         }
         $this->pDebug('Details',$result);
-        $count = $this->deleteById('alliances',$id);
+        $count = $this->wos->deleteByID('alliances',$id);
         if ($count == 0) {
             $this->pExit("Could not delete Alliance id=$id ??",404);
         }
@@ -304,7 +278,7 @@ class WosController extends Controller {
      */
     public function players() {
         $this->htmlHeader('== Player list');
-        // Validation
+        /////////////////////// Validation
         $sort = strtolower(request()->params('sort','player_name'));
         $dir  = strtolower(request()->params('dir' ,'asc'));
         if ( array_search($sort,self::LIST_COLUMNS,true) === false ) {
@@ -316,7 +290,7 @@ class WosController extends Controller {
             $dir = 'asc';
         }
 
-        // Filters for list
+        ////////////////////// Filters for list
         $urlParams = request()->try(['sort','dir','alliance_id','ignore'],true);
         unset ($urlParams[0]);
         $this->p('<table><tr><form>');
@@ -327,7 +301,7 @@ class WosController extends Controller {
                             $key, $val ) );
         }
         $this->p('<b>Filters:</b>','td');
-        $pe = new playerExtra('',true);
+        $pe = new PlayerExtra('',true);
         $filters = [];
         foreach (array_keys(self::FILTER_NAMES) as $col) {
             $val = isset($urlParams[$col]) ? intval($urlParams[$col]) : -1;
@@ -351,7 +325,13 @@ class WosController extends Controller {
                         ),'td');
         $this->p('</tr></table>');
 
-        // Assemble headers for table
+        /////////////// Notes
+        $this->p('<ul>');
+        $this->p("<b>Ignore</b> = Keep player in the database, but don't send them a gift code.",'li');
+        $this->p("<b>Action buttons</b> = Will act on only 1 player, this UI is crude and simple ;-)",'li');
+        $this->p('</ul>');
+
+        /////////////// Headers for table
         $xCols = 0;
         foreach (self::LIST_COLUMNS as $dbField) {
             if (substr($dbField,0,2)=='x:') {
@@ -377,15 +357,15 @@ class WosController extends Controller {
         }
         $this->p('<th>Actions</th></tr>');
 
+        /////////////////// Main table
         try {
-            // Assemble players array
             #$dbSort = substr($sort,0,2) == 'x:' ? 'player_name' : $sort;
             $allPlayers = db()
                 ->select('players')
                 #->orderBy("$dbSort COLLATE NOCASE",$dir)
                 ->all();
             foreach ($allPlayers as $key => $p) {
-                $pe->parseJsonExtra($p['extra']);
+                $pe->parseJsonExtra($p['extra'],$p['giftcode_ids']);
                 foreach ($filters as $col => $val) {
                     if ($pe->$col != $val) {
                         unset($allPlayers[$key]);
@@ -429,6 +409,7 @@ class WosController extends Controller {
                             break;
                         case 'id' :
                         case 'last_message' :
+                        case 'giftcode_ids' :
                         case 'updated_at':
                             $this->p($p[$col],'td');
                             break;
@@ -448,16 +429,12 @@ class WosController extends Controller {
             if ( count($allPlayers)==0 ) {
                 $this->p('No players in the database!','p');
             }
-            $this->logInfo('Listed '.($n-1).' players');
+            $this->wos->logInfo('Listed '.($n-1).' players');
         } catch (PDOException $ex) {
             $this->p(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),'p');
         } catch (\Exception $ex) {
             $this->p(__METHOD__.' <b>Exception:</b> '.$ex->getMessage(),'p');
         }
-        $this->p('<ul>');
-        $this->p("<b>Ignore</b> = Keep player in the database, but don't send them a gift code.",'li');
-        $this->p("<b>Action buttons</b> = Will act on only 1 player, this UI is crude and simple ;-)",'li');
-        $this->p('</ul>');
         $this->htmlFooter();
     }
 
@@ -467,130 +444,118 @@ class WosController extends Controller {
     public function send($giftCode) {
         $this->htmlHeader('== Send Gift Code');
         $this->validateGiftCode($giftCode);
-        $this->p("Sending <b>$giftCode</b> to all players that haven't yet received it:",'p');
+        $this->p("Preparing to send '<b>$giftCode</b>' to all players that haven't yet received it",'p',true);
 
-        // Create initial stub record for this giftcode
-        $this->stats = new giftcodeStatistics();
-        $startTime = $this->getTimestring(true,true);
         try {
-            $gc = db()->select('giftcodes','statistics')
+            $gc = db()->select('giftcodes')
                 ->where(['code' => $giftCode])
                 ->first();
-            if ( !empty($gc) ) {
-                $this->stats->parseJsonStatistics($gc['statistics']);
+            $numPlayers = $this->wos->getPlayersForGiftcode( empty($gc) ? null : $giftCode );
+
+            if ( empty($gc) ) {
+                // NEW GiftCode: Start the process
+                //
+                // send_gift_ts: 0=daemon NOT processing, otherwise Unixtime of when it started
+                // pct_done: -1=signal for daemon to start, 0-99=processing, 100=done.
+                //           Truly completed: pct_done=100 + send_gift_ts=0
+                //
+                $this->wos->stats = new GiftcodeStatistics();
+                $this->wos->stats->increment('usersSending',$_SERVER['REMOTE_USER']);
+                $t = $this->wos->getTimestring(true,false); // Formatted time
+                db()->insert('giftcodes')
+                    ->params(['code'        => $giftCode,
+                              'created_at'  => $t,
+                              'updated_at'  => $t,
+                              'statistics'  => $this->wos->stats->getJson(),
+                              'send_gift_ts'=> 0,
+                              'pct_done'    => -1  // Tell daemon to start processing
+                            ])
+                    ->execute();
+                if ($this->wos->dbg) {
+                    $this->pDebug('GiftCode object',$gc);
+                }
+
+                // Really done here, so perhaps refresh to keep updating screen?
+                $this->p("QUEUED New gift code for processing of $numPlayers players.",'p',true);
+                #$this->htmlFooter();
+                #return;
+            } else {
+                // Existing GiftCode cases:
+                // 1) Daemon hasn't started
+                //       Check if it's taking too long (pct_done=-1 long time) and tell user if so
+                //       ?? Consider it might still be processing a DIFFERENT giftcode
+                //       Tell user to wait
+                // 2) Daemon in process, still running
+                //       Just display progress
+                // 3) Daemon quit mid-process
+                //       Go ahead and restart
+                // 4) Daemon already completed successfully
+                //       Check if more (new) users would get giftcode, and restart if so
+                // 5) Giftcode is expired or invalid
+                //       Do nothing
+                //
+                if ($this->wos->dbg) {
+                    $this->pDebug('GiftCode object',$gc);
+                }
+                $this->wos->stats = new GiftcodeStatistics($gc['statistics']);
+                $origNumPlayers = empty($this->wos->stats->expected) ?
+                                    $numPlayers : end($this->wos->stats->expected);
+
+                if ( ! empty($this->wos->stats->expected) ) {
+                    $this->p(sprintf('%d previous runs: %d succesful redemptions, %d had already redeemed.',
+                                count($this->wos->stats->expected),
+                                $this->wos->stats->succesful,
+                                $this->wos->stats->alreadyReceived)
+                            ,'p');
+                }
+                $t = $this->wos->getTimestring(true); // Unixtime
+                $timeSinceUpdate = $t - tick($gc['updated_at'])->format('U');
+                $updateHMS       = gmdate("H:i:s", $timeSinceUpdate);
+                $timeSinceStart  = $t - $gc['send_gift_ts'];
+                $startHMS        = gmdate("H:i:s", $timeSinceStart);
+                $pctDone         = $gc['pct_done'].'%';
+
+                $resetPctDone = false;
+                $statusMsg = $this->wos->stats->stateOfGiftCodeHTML($gc);
+                switch ( GiftcodeStatistics::stateOfGiftCode($gc) ) {
+                    case GiftcodeStatistics::GC_QUEUED:     // 1) hasn't started
+                        $this->p("$statusMsg $updateHMS ago. <br/>Hasn't started processing, expecting $numPlayers players.",'p',true);
+                        break;
+                    case GiftcodeStatistics::GC_RUNNING:    // 2) still processing
+                        $this->p("$statusMsg at $startHMS <br/>with $numPlayers/$origNumPlayers players.",'p',true);
+                        break;
+                    case GiftcodeStatistics::GC_QUIT:       // 3) Quit mid-process, restart if users to process
+                        $timeSinceUpdate = 0;
+                        $resetPctDone = ($numPlayers>0 ? -1 : 100);
+                        $msg = "$statusMsg for $origNumPlayers players";
+                        break;
+                    case GiftcodeStatistics::GC_DONE:       // 4) Already done, restart if users to process
+                        $timeSinceUpdate = 0;
+                        $resetPctDone = ($numPlayers>0 ? -1 : 100);
+                        $msg = "$statusMsg and fully completed";
+                        break;
+                    case GiftcodeStatistics::GC_EXPIRED:       // 4) Already done, restart if users to process
+                        $timeSinceUpdate = 0;
+                        $this->p("$statusMsg or invalid gift code as of last check on ".$gc['updated_at'],'p',true);
+                        break;
+                    default:
+                        $timeSinceUpdate = 0;
+                        $this->pDebug("$statusMsg state of giftcode!",$gc);
+                        break;
+                }
+                if ( $timeSinceUpdate >= 300 ) { // 5min is too long to wait
+                    $this->p("WARNING: It's been too long, something is probably wrong with the giftcode daemon!",'p',true);
+                } else if ( $resetPctDone ) {
+                    $this->p(sprintf('%s.<br/>%s.', $msg,
+                                $numPlayers>0 ? "Re-QUEING job for $numPlayers players" :
+                                                "Currently no players need it")
+                            ,'p',true);
+                    $this->wos->updateGiftcodeStats($giftCode,$resetPctDone,0);
+                }
             }
-            if ($this->dbg) {
-                $this->pDebug('prevStats=',$gc);
-            }
-            $this->stats->increment('usersSending',$_SERVER['REMOTE_USER']);
-            $s = $this->stats->getJson();
-            $t = $this->getTimestring(false,false);
-            db()->query('INSERT INTO giftcodes(code,created_at,updated_at,statistics) '.
-                        'VALUES (?,?,?,?) ON CONFLICT(code) '.
-                        'DO UPDATE SET updated_at=?, statistics=?')
-                ->bind($giftCode, $t, $t, $s, $t, $s)
-                ->execute();
         } catch (PDOException $ex) {
-            $this->p('<b>DB WARNING upserting giftcode:</b> '.$ex->getMessage(),'p',true);
+            $this->p(__METHOD__.' <b>DB WARNING upserting giftcode:</b> '.$ex->getMessage(),'p',true);
         }
-
-        $httpReturnCode = 200;
-        $errMsg = [];
-        $n = 0; // # of players attempted
-        $xrlrPauseTime = 61; // sleep time when reaching x-ratelimit-remaining
-        $this->badResponsesLeft = 3; // Max bad responses (network error) from API before abort
-        try {
-            $allPlayers = db()
-                ->select('players')
-                ->where('last_message', 'not like', $giftCode.': %')
-                ->where('extra', 'not like', '%ignore":1%')
-                ->orderBy('id','asc')
-                ->all();
-            $numPlayers = count($allPlayers);
-            $label = 'Try#'.count($this->stats->expected)+1;
-            $this->stats->expected[$label] = $numPlayers;
-            if ($this->dbg) {
-                $this->p(__METHOD__." Found $numPlayers to process",'p',true);
-            }
-            if ( $numPlayers == 0 ) {
-                $errMsg[] = 'No players in the database that still need that gift code.';
-                $httpReturnCode = 404;
-            }
-            if ($this->dbg) {
-                $this->p("numPlayers=$numPlayers",'p',true);
-            }
-            foreach ($allPlayers as $p) {
-                usleep(100000); // 100msec slow-down between players
-                if ( $this->badResponsesLeft < 1 ) {
-                    break;
-                }
-                $n++;
-
-                // Debug use
-                if ($this->guzEmulate && $n>20) break;
-
-                $signInResponse = $this->verifyPlayerInWOS($p);
-                if ( is_null($signInResponse) ) {
-                    // Do not continue process, API problem
-                    $this->updateGiftcodeStats($giftCode);
-                    break;
-                } else if ( ! $signInResponse['playerGood'] ) {
-                    // Invalid sign-in, ignore this player
-                    $this->updateGiftcodeStats($giftCode);
-                    continue;
-                }
-
-                // API ratelimit: assume if it hits 0 we have to wait 1 minute
-                $xrlr = $signInResponse['headers']['x-ratelimit-remaining'];
-                if ($xrlr < 2 && $n < $numPlayers) {
-                    $this->p("(signIn x-ratelimit-remaining=$xrlr - pause $xrlrPauseTime sec) ",0,true);
-                    // Proactively sleep here
-                    if ( ! $this->guzEmulate ) {
-                        sleep($xrlrPauseTime);
-                    }
-                }
-
-                $giftResponse = $this->send1Giftcode($p['id'],$giftCode);
-                if ( $giftResponse == null ) {
-                    // Do not continue process, API problem
-                    break;
-                }
-
-                // API ratelimit: assume if it hits 0 we have to wait 1 minute
-                $xrlr = $giftResponse['headers']['x-ratelimit-remaining'];
-                if ($xrlr < 2 && $n < $numPlayers) {
-                    $this->stats->hitRateLimit++;
-                    $this->p("(gift x-ratelimit-remaining=$xrlr - pause $xrlrPauseTime sec) ",0,true);
-                    // Proactively sleep here
-                    if ( ! $this->guzEmulate && $n < $numPlayers) {
-                        sleep($xrlrPauseTime);
-                    }
-                }
-            }
-        } catch (PDOException $ex) {
-            $errMsg[] = __METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage();
-            $httpReturnCode = 500;
-        } catch (\Exception $ex) {
-            $errMsg[] = __METHOD__.' <b>Exception:</b> '.$ex->getMessage();
-            if ($this->dbg) {
-                $this->pDebug('exception=',$ex);
-            }
-            $httpReturnCode = 500;
-        }
-        if ( $this->badResponsesLeft<1 ) {
-            $errMsg[] = 'exceeded max bad responses.';
-            $httpReturnCode = 500;
-        }
-        $this->p("Processed $n players",'p',true);
-        $this->stats->runtime = $this->stats->runtime + ($this->getTimestring(true,true) - $startTime);
-        $this->updateGiftcodeStats($giftCode);
-        if ( $httpReturnCode>200 ) {
-            if ( $httpReturnCode>404 ) {
-                $errMsg[] = 'Incomplete run!';
-            }
-            $this->pExit($errMsg,$httpReturnCode);
-        }
-        $this->p('Send giftcode run completed succesfully!','p',true);
         $this->htmlFooter();
     }
 
@@ -599,7 +564,7 @@ class WosController extends Controller {
      */
     public function add($player_id) {
         $this->htmlHeader('== Add player');
-        $player_id = $this->validateId($player_id);
+        $player_id = $this->validateID($player_id);
         $this->p("Adding player id=$player_id",'p',true);
         try {
             // Check for duplicate before hitting WOS API
@@ -612,7 +577,7 @@ class WosController extends Controller {
             }
 
             // Verify player exists and is in #245 thru WOS API
-            $response = $this->signInWOS($player_id);
+            $response = $this->wos->signInWOS($player_id);
             if ($response['err_code'] == 40004) {
                 $this->pExit('<b>ERROR:</b> player ID does not exist in WOS, ignored.',404);
             } else if ($response['http-status'] >= 400) {
@@ -621,17 +586,17 @@ class WosController extends Controller {
                 $this->pExit('<b>WOS API problem:</b> '.$response['err_code'].': '.$response['msg'],418);
             }
             $data = $response['data'];
-            if ($data->kid != $this->ourState) {
+            if ($data->kid != $this->wos->ourState) {
                 $this->pExit('<b>'.$data->nickname.'</b> is in invalid state #'.$data->kid,404);
             }
             // All good, insert!
-            $pe = new playerExtra(); // 'extra' field pre-populated with defaults
+            $pe = new PlayerExtra(); // 'extra' field pre-populated with defaults
             $aid = db()
                 ->select('alliances','id')
-                ->where(['short_name'=>$this->ourAlliance])  // Default to VHL alliance
+                ->where(['short_name'=>$this->wos->ourAlliance])  // Default to VHL alliance
                 ->first();
             $pe->alliance_id = empty($aid) ? 0 : $aid['id'];
-            $t = $this->getTimestring(true,false);
+            $t = $this->wos->getTimestring(true,false);
             $playerData = [
                 'id'            => $player_id,
                 'player_name'   => trim($data->nickname),
@@ -662,7 +627,7 @@ class WosController extends Controller {
      */
     public function update($player_id) {
         $this->htmlHeader('== Update player');
-        $player_id = $this->validateId($player_id);
+        $player_id = $this->validateID($player_id);
         $this->p("Updating player id=$player_id",'p',true);
         try {
             // Check for duplicate before hitting WOS API
@@ -685,9 +650,9 @@ class WosController extends Controller {
                 }
                 $params['ignore'] = ($i=='on' ? 1 : $i);
             }
-            $pe = new playerExtra( json_encode($params, JSON_UNESCAPED_UNICODE), true );
+            $pe = new PlayerExtra( json_encode($params, JSON_UNESCAPED_UNICODE), true );
             $data = [
-                'updated_at'    => $this->getTimestring(true,false),
+                'updated_at'    => $this->wos->getTimestring(true,false),
                 'extra'         => $pe->getJson()
             ];
             $rowsUpdated = db()
@@ -702,6 +667,7 @@ class WosController extends Controller {
                 $this->p('Updated: <b>'.$playerData['player_name'].'</b>','p',true);
                 unset($playerData['extra']);
                 $playerData['updated_at'] = $data['updated_at'];
+                $pe->setGiftcodeIDs($playerData['giftcode_ids']);
                 $data = array_merge($playerData,$pe->getArray(true));
                 $this->pDebug('Details',$data);
             } else {
@@ -737,7 +703,7 @@ class WosController extends Controller {
                     ->all();
                 break;
             default:
-                $playerIDs = [ $this->validateId($player_id) ];
+                $playerIDs = [ $this->validateID($player_id) ];
                 break;
         }
         if ( empty($playerIDs) ) {
@@ -752,13 +718,13 @@ class WosController extends Controller {
         }
 
         try {
-            $this->stats = new giftcodeStatistics(); // won't use, but verifyPlayerInWOS needs it
-            $this->badResponsesLeft = 4; // max issues from WOS API before abort
+            $this->wos->stats = new GiftcodeStatistics(); // won't use, but verifyPlayerInWOS needs it
+            $this->wos->badResponsesLeft = 4; // max issues from WOS API before abort
             $xrlrPauseTime = 61;
             $n = 0;
             foreach ($playerIDs as $playerID) {
                 usleep(100000); // 100msec slow-down between players
-                if ( $this->badResponsesLeft < 1 ) {
+                if ( $this->wos->badResponsesLeft < 1 ) {
                     break;
                 }
                 $n++;
@@ -774,7 +740,7 @@ class WosController extends Controller {
                 }
 
                 // Verify in MOS API
-                $signInResponse = $this->verifyPlayerInWOS($playerData);
+                $signInResponse = $this->wos->verifyPlayerInWOS($playerData);
                 if ( is_null($signInResponse) ) { // signal we need to abort
                     break;
                 }
@@ -791,15 +757,16 @@ class WosController extends Controller {
                 if ($xrlr < 2 && $n < $numPlayers) {
                     $this->p("(signIn x-ratelimit-remaining=$xrlr - pause $xrlrPauseTime sec) ",0,true);
                     // Proactively sleep here
-                    if ( ! $this->guzEmulate ) {
+                    if ( ! $this->wos->guzEmulate ) {
                         sleep($xrlrPauseTime);
                     }
                 }
             }
             if ($numPlayers==1) {
                 // Dump single player data
-                $pe = new playerExtra($playerData['extra'],true);
+                $pe = new PlayerExtra($playerData['extra'],true);
                 unset($playerData['extra']);
+                $pe->setGiftcodeIDs($playerData['giftcode_ids']);
                 $playerData = array_merge($playerData,$pe->getArray(true));
                 $this->pDebug('<b>Results</b>',$playerData);
             } else if ($n==$numPlayers) {
@@ -818,7 +785,7 @@ class WosController extends Controller {
      */
     public function remove($player_id) {
         $this->htmlHeader('== Remove player');
-        $player_id = $this->validateId($player_id);
+        $player_id = $this->validateID($player_id);
         $this->p("Removing player id=$player_id",'p',true);
         $result = db()
             ->select('players')
@@ -827,7 +794,7 @@ class WosController extends Controller {
             $this->pExit("Player id=$player_id not found",404);
         }
         $this->pDebug('Details',$result);
-        $count = $this->deleteById('players',$player_id);
+        $count = $this->wos->deleteByID('players',$player_id);
         if ($count == 0) {
             $this->pExit("Could not delete player id=$player_id ??",404);
         }
@@ -840,34 +807,77 @@ class WosController extends Controller {
      */
     public function giftcodes() {
         $this->htmlHeader('== Sent Giftcode List');
-        $this->p('This is a summary of the last 10 gift codes sent in the past','p');
+        /////////////////////// URL param validation
+        $num = intval( request()->params('num',10) );
+        if ( $num<0  ) $num=1;
+        if ( $num>200) $num=200;
+        $fullstats = intval(request()->params('fullstats',0));
+        if ( $fullstats!=0 ) $fullstats=1;
+        $gcColumns = ( $fullstats ? self::GIFTCODE_COLUMNS_STATS : self::GIFTCODE_COLUMNS );
+
+        ////////// Filters
+        $this->p('<table><tr><form>');
+        $this->p('<b>Filters:</b>','td');
+        $f = 'Statistics=<select name="fullstats" id="f:fullstats">';
+        foreach (['brief','full'] as $n => $val) {
+            $f .= sprintf('<option value="%d"%s>%s</option>',
+                    $n, ($n==$fullstats ? ' selected' : ''), $val);
+        }
+        $this->p("$f</select>",'td');
+        $this->p(sprintf('Number to list=<input type="text" id="num" name="num" size="3" value="%d">',
+                    $num),'td');
+        $this->p('<input type="submit" value="Apply">','td');
+        $this->p('</form>');
+        $this->p('<input type="submit" value="Reset" formmethod="get"'.
+                            ' onclick="return gotoURL(\'/giftcodes\')" />'
+                        ,'td');
+        $this->p('</tr></table>');
+
+        //////// Main table
         $this->p('<table><tr>');
-        foreach (array_keys(self::GIFTCODE_COLUMNS) as $colName) {
+        foreach (array_keys($gcColumns) as $colName) {
             $this->p("<u>$colName</u>",'th');
         }
         $this->p('</tr>');
         try {
-            $allGiftcodes = db()
+            $query = db()
                 ->select('giftcodes')
-                ->orderBy('id','desc')
-                ->limit(10)
-                ->all();
-            $stats = new giftcodeStatistics();
-            foreach ($allGiftcodes as $a) {
-                #$this->pDebug('json=',$a['statistics']);
-                $stats->parseJsonStatistics($a['statistics']);
-                unset($a['statistics']);
-                $a = array_merge($a, (array) $stats);
+                ->orderBy('id','desc');
+            if ( $num ) {
+                $query = $query->limit($num);
+            }
+            $allGiftcodes = $query->all();
+            $stats = new GiftcodeStatistics();
+            $i=0;
+            foreach ($allGiftcodes as $gc) {
+                #if ($i++==0 || $gc['pct_done']<100) $this->pDebug('First=',$gc);
+                $stats->parseJsonStatistics($gc['statistics']);
+                unset($gc['statistics']);
+                $gc = array_merge($gc, (array) $stats);
                 $this->p('<tr>');
-                foreach (self::GIFTCODE_COLUMNS as $col) {
-                    $val = $a[$col];
-                    $type = is_array($val) ? 'array' : (is_numeric($val) ? 'num' : 'string');
+                foreach ($gcColumns as $col) {
+                    if ( substr($col,0,1)==':' ) {
+                        $type = $col;
+                    } else {
+                        $val = $gc[$col];
+                        $type = is_array($val) ? 'array' : (is_numeric($val) ? 'num' : 'string');
+                    }
                     switch ($type) {
-                        case 'num':
-                            $this->p('<td style="text-align: center;">'.$val.'</td>');
+                        case ':Code':
+                            $val = $gc['code'];
+                            if ( $gc['pct_done']>=0 && $gc['pct_done']<=100 ) {
+                                $val = sprintf('<a href="/send/%s">%s</a>', $val, $val);
+                            }
+                            $this->p("<b>$val</b>",'td');
+                            break;
+                        case ':State':
+                            $this->p($stats->stateOfGiftCodeHTML($gc, $fullstats),'td');
                             break;
                         case 'string':
                             $this->p("<b>$val</b>",'td');
+                            break;
+                        case 'num':
+                            $this->p('<td style="text-align: center;">'.$val.'</td>');
                             break;
                         case 'array':
                             $this->p('<td>');
@@ -886,7 +896,7 @@ class WosController extends Controller {
             if ( $n<1 ) {
                 $this->p('No sent Giftcodes in the database!','p');
             }
-            $this->logInfo("Listed $n Giftcodes");
+            $this->wos->logInfo("Listed $n Giftcodes");
         } catch (PDOException $ex) {
             $this->p(__METHOD__.' <b>DB ERROR:</b> '.$ex->getMessage(),'p',true);
         } catch (\Exception $ex) {
@@ -935,7 +945,7 @@ class WosController extends Controller {
                 'Content-Type'        => $formats[$fileFormat]['ct'],
                 'Content-Disposition' => sprintf(
                         'attachment; filename="wos245players_%s.%s"',
-                        substr($this->getTimestring(true,false),0,10),
+                        substr($this->wos->getTimestring(true,false),0,10),
                         $formats[$fileFormat]['ext']
                     )
             ])->sendHeaders();
@@ -947,9 +957,9 @@ class WosController extends Controller {
                 ->orderBy('id','asc')
                 ->all();
 
-            $pe = new playerExtra('',true);
+            $pe = new PlayerExtra('',true);
             foreach ($allPlayers as $key => $p) {
-                $pe->parseJsonExtra($p['extra']);
+                $pe->parseJsonExtra($p['extra'],$p['giftcode_ids']);
                 unset($p['extra']);
                 $allPlayers[$key] = array_merge($p,$pe->getArray(true));
             }
@@ -1077,7 +1087,7 @@ class WosController extends Controller {
         $fullLine = sprintf("%s:%s:%s\n", $username, self::DIGEST_REALM,
             $this->plainPassword2Digest($username,$password) );
         file_put_contents( _env('APACHE_DIGEST'), $fullLine, FILE_APPEND | LOCK_EX);
-        $this->logInfo($_SERVER['REMOTE_USER'].' added: '.$fullLine);
+        $this->wos->logInfo($_SERVER['REMOTE_USER'].' added: '.$fullLine);
         $numUser = $this->countUsers($username);
         if ( $numUser < 1 ) {
             $this->pExit("ERROR: Could not verify new admin user!",500);
@@ -1151,8 +1161,8 @@ class WosController extends Controller {
                             ) ));
     }
     private function execCmd($cmd) {
-        if ($this->dbg) {
-            $this->logInfo("--Executing: ".$cmd);
+        if ($this->wos->dbg) {
+            $this->wos->logInfo("--Executing: ".$cmd);
         }
         return `$cmd`;
     }
@@ -1228,7 +1238,7 @@ class WosController extends Controller {
         }
         return true;
     }
-    private function validateId($player_id) {
+    private function validateID($player_id) {
         if (!empty($player_id)) {
             $player_id = trim($player_id);
             $int_id = abs(intval($player_id));
@@ -1280,440 +1290,6 @@ class WosController extends Controller {
             $this->pExit($errMsg,400);
         }
     }
-    private function deleteById($table,$id) {
-        try {
-            $result = db()
-                ->delete($table)
-                ->where(['id' => $id])
-                ->execute();
-            return $result->rowCount();
-        } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR Deleting:</b> '.$ex->getMessage(),'p',true);
-        } catch (\Exception $ex) {
-            $this->p('<b>Exception Deleting:</b> '.$ex->getMessage(),'p',true);
-        }
-        return -1;
-    }
-    private function verifyPlayerInWOS( &$p ) {
-        // Verify player
-        $this->p('<p>'.$p['id'].' - <b>'.$p['player_name'].'</b>: ',0,true);
-        $tries = 3;
-        $signInGood = false;
-        $sleepAmount = 0;
-        while ($tries>0 && $this->badResponsesLeft>0) {
-            sleep($sleepAmount);
-            $sleepAmount = 0;
-            $tries--;
-            $signInResponse = $this->signInWOS($p['id']);
-            if ($this->dbg) {
-                $this->pDebug('signInResponse= ',$signInResponse);
-            }
-            if (empty($signInResponse['http-status'])) {
-                // Timeout or network error
-                $this->stats->networkError++;
-                $this->p('(Network error: '.$signInResponse['guzExceptionMessage'].') ',0,true);
-                $this->badResponsesLeft--;
-                sleep($this->guzEmulate ? 0 : 2);
-            } else if ($signInResponse['http-status']==429) {
-                // Hit rate limit!
-                $this->stats->hitRateLimit++;
-                $sleepAmount = $this->guzEmulate ? 1 : 61;
-                $this->p("(Pausing $sleepAmount sec due to 429 signIn rate limit) ",0,true);
-            } else if ($signInResponse['http-status'] >= 400) {
-                $this->stats->increment('signinErrorCodes','GuzException '.$signInResponse['guzExceptionMessage']);
-                $this->p(sprintf('<b>ABORT: WOS signIn API ERROR:</b> httpCode=%s Message=%s',
-                    $signInResponse['http-status'], $signInResponse['guzExceptionMessage'] ) ,'p',true);
-                return null;
-            } else {
-                // All good!
-                $signInGood = true;
-                break;
-            }
-        }
-        if ( ! $signInGood ) {
-            // Couldn't sign in above, but don't want to rush to remove
-            // player unless we have positive confirmation they don't exist.
-            $this->p('<b>ABORT:</b> Failed to sign in player</p>',0,true);
-            return null;
-        }
-        $sd = $signInResponse['data'];
-        $signInResponse['playerGood'] = true;
-        $stateID = isset($sd->kid) ? $sd->kid : -1;
-        if ($signInResponse['err_code'] == 40004 || $stateID !=$this->ourState ) {
-            // 40004 = Player doesn't exist
-            $this->p(sprintf('DELETING player: invalid %s</p>',
-                            $stateID==-1 ? 'WOS user' : 'state (#'.$stateID.')'
-                        ),0,true);
-            if ( $this->deleteById('players',$p['id']) == -1 ) {
-                // Exception thrown during delete, so let's just stop
-                return null;
-            }
-            $this->stats->deletedPlayers[ $p['id'] ] = $p['player_name'];
-            $signInResponse['playerGood'] = false;
-        } else if (
-            $p['player_name']       != trim($sd->nickname)  ||
-            $p['avatar_image']      != $sd->avatar_image    ||
-            $p['stove_lv']          != $sd->stove_lv        ||
-            $p['stove_lv_content']  != $sd->stove_lv_content   )
-        {
-            // Update player if needed
-            $data = [
-                    'player_name'       => trim($sd->nickname),
-                    'avatar_image'      => $sd->avatar_image,
-                    'stove_lv'          => $sd->stove_lv,
-                    'stove_lv_content'  => $sd->stove_lv_content,
-                    'updated_at'        => $this->getTimestring(false,false)
-                    ];
-            $p = array_merge($p, $data);
-            db()->update('players')
-                ->params($data)
-                ->where(['id' => $p['id']])
-                ->execute();
-        }
-        return $signInResponse;
-    }
-
-    private function send1Giftcode($playerId,$giftCode) {
-        $tries = 3;
-        $sendGiftGood = false;
-        $sleepAmount = 0;
-        while ($tries>0 && $this->badResponsesLeft>0) {
-            if ( ! $this->guzEmulate ) {
-                // Only sleep at top of loop for retrying
-                sleep($sleepAmount);
-            }
-            $sleepAmount = 0;
-            $tries--;
-            $giftResponse = $this->sendGiftCodeWOS($playerId,$giftCode);
-            if ($this->dbg) {
-                $this->pDebug('giftResponse= ',$giftResponse);
-            }
-            if (empty($giftResponse['http-status'])) {
-                // Timeout or network error
-                $this->stats->networkError++;
-                $giftResponse['msg'] = $giftResponse['guzExceptionMessage'];
-                $sleepAmount = $this->guzEmulate ? 0 : 2;
-                $this->p('(Network error: '.$giftResponse['msg']." - pause $sleepAmount sec.) ",0,true);
-                $this->badResponsesLeft--;
-                continue; // Retry
-            }
-            $giftErrCode = $giftResponse['err_code'];
-            if ($giftErrCode == 40014) {
-                // Invalid gift code
-                $this->p('Aborting: Invalid gift code','b',true);
-                $this->stats->increment('giftErrorCodes','40014 Invalid gift code');
-                return null;
-            }
-            if ($giftErrCode == 40007) {
-                // Expired gift code
-                $this->p('Aborting: Gift code expired','b',true);
-                $this->stats->increment('giftErrorCodes','40007 Gift code expired');
-                return null;
-            }
-            $resetIn = 0;
-            if ($giftErrCode == 40004) {
-                // Timeout retry
-                $resetIn = 3;
-                $msg = "Gift errCode=$giftErrCode Timeout retry";
-            } else if ($giftResponse['http-status']==429) {
-                // Too many requests
-                if ( !empty($giftResponse['headers']['x-ratelimit-reset']) ) {
-                    $ratelimitReset = $giftResponse['headers']['x-ratelimit-reset'];
-                    // Convert from UNIX time?
-                    $resetAt = (intval($ratelimitReset) == $ratelimitReset ?
-                                    tick("@$ratelimitReset") : tick());
-                    $resetIn = intval($ratelimitReset) - intval($this->getTimestring(false,true));
-                } else {
-                    $ratelimitReset = -1;
-                    $resetAt = tick();
-                }
-                // For sanity, until I see real values for x-ratelimit-reset
-                if ( $resetIn < 1 || $resetIn > 65) {
-                    $resetIn = 21;
-                }
-                //if ( $this->dbg ) {
-                // Force debug info for this case, as we haven't seen this live.
-                // The 60sec sleep for a 429 in signIn above seems to have solved
-                // this whole issue, and we may not need to sleep here at all.
-                    $this->pDebug('**** giftHeaders: ',$giftResponse['headers']);
-                    $this->p("429: x-ratelimit-reset=$ratelimitReset"
-                        ."\nnow=".$this->getTimestring(false,true)
-                        ."=".$this->getTimestring(false,false)
-                        ."\nresetIn=$resetIn"
-                        ."\nresetAt=".$resetAt->format('YYYY-MM-DD HH:mm:ss')
-                        ,'pre',true);
-                //}
-                $msg = "http 429 Too many attempts";
-                $this->stats->hitRateLimit++;
-            } else if ($giftResponse['http-status'] >= 400) {
-                $this->p('<b>WOS gift API ERROR:</b> '.$giftResponse['guzExceptionMessage'],'p',true);
-                $this->stats->increment('giftErrorCodes','GuzException '.$giftResponse['guzExceptionMessage']);
-                return null;
-            }
-            if ( !empty($msg) ) {
-                $this->stats->increment('giftErrorCodes',$msg);
-            }
-            if ( $resetIn > 0 ) {
-                $msg = "$msg: ".$giftResponse['msg']." - pausing $resetIn sec.";
-                $this->p("($msg)",0,true);
-                db()->update('players')
-                    ->params([
-                        'last_message'  => $msg,
-                        'updated_at'    => $this->getTimestring(true,false)
-                    ])
-                    ->where(['id' => $playerId])
-                    ->execute();
-                $sleepAmount = $this->guzEmulate ? 1 : $resetIn;
-            } else { // Success!
-                break;
-            }
-        }
-        switch ($giftErrCode) {
-            case 20000:
-                $msg = "$giftCode: redeemed succesfully";
-                $sendGiftGood = true;
-                $this->stats->succesful++;
-                break;
-            case 40008:
-                $msg = "$giftCode: already used";
-                $sendGiftGood = true;
-                $this->stats->alreadyReceived++;
-                break;
-            default:
-                $msg = "$giftErrCode ".$giftResponse['msg'];
-                $this->stats->increment('giftErrorCodes',$msg);
-                break;
-        }
-        $this->p("$msg</p>",0,true);
-        db()->update('players')
-            ->params([
-                'last_message'  => $msg,
-                'updated_at'    => $this->getTimestring(true,false)
-            ])
-            ->where(['id' => $playerId])
-            ->execute();
-        $this->updateGiftcodeStats($giftCode);
-
-        if ( ! $sendGiftGood ) {
-            // Unless we know for sure we should continue to other players,
-            // let's abort here and not hit the API any more.
-            // We can add more retriable cases above as we find them.
-            $this->p('Cannot confirm we can continue, stopping now.','p',true);
-            return null;
-        }
-        return $giftResponse;
-    }
-
-    private function updateGiftcodeStats($code) {
-        try {
-            $rowsUpdated = db()
-                    ->update('giftcodes')
-                    ->params([
-                        'updated_at' => $this->getTimestring(true,false),
-                        'statistics' => $this->stats->getJson()
-                    ])
-                    ->where(['code' => $code])
-                    ->execute()
-                    ->rowCount();
-        } catch (PDOException $ex) {
-            $this->p('<b>DB ERROR updating giftcodes:</b> '.$ex->getMessage(),'p',true);
-        }
-    }
-
-    ///////////////////////// Guzzle functions
-    private function signInWOS($fid) {
-/*
-    ====== Headers:
-    Date: Sun, 30 Jun 2024 16:42:27 GMT
-    Content-Type: application/json
-    Transfer-Encoding: chunked
-    Connection: keep-alive
-    Server: nginx/1.16.1
-    X-Powered-By: PHP/7.4.19
-    Cache-Control: no-cache, private
-    X-RateLimit-Limit: 30
-    X-RateLimit-Remaining: 29
-    Access-Control-Allow-Origin: *
-    ======== Body:
-    {"code":1,"data":[],"msg":"params error","err_code":""}
-    {"code":1,"data":[],"msg":"Sign Error","err_code":0}
-    {"code":0,"data":{
-        "fid":33750731,
-        "nickname":"lord33750731",
-        "kid":245,
-        "stove_lv":10,
-        "stove_lv_content":10,
-        "avatar_image":"https:\/\/gof-formal-avatar.akamaized.net\/avatar-dev\/2023\/07\/17\/1001.png"
-        },
-        "msg":"success","err_code":""}
-*/
-        return $this->guzzlePOST(
-            'https://wos-giftcode-api.centurygame.com/api/player',
-            $fid
-        );
-    }
-
-    private function sendGiftCodeWOS($fid, $giftCode) {
-/*
-Headers:
-    [date] => Tue, 02 Jul 2024 13:03:07 GMT
-    [content-type] => application/json
-    [transfer-encoding] => chunked
-    [connection] => keep-alive
-    [server] => nginx/1.16.1
-    [x-powered-by] => PHP/7.4.19
-    [cache-control] => no-cache, private
-    [x-ratelimit-limit] => 30
-    [x-ratelimit-remaining] => 28
-    [access-control-allow-origin] => *
-Body1:
-    [code] => 0
-    [data] => Array()
-    [msg] => SUCCESS
-    [err_code] => 20000
-Body2:
-    [code] => 1
-    [data] => Array()
-    [msg] => RECEIVED.
-    [err_code] => 40008
-Body3:
-    [code] => 1
-    [data] => Array()
-    [msg] => CDK NOT FOUND.
-    [err_code] => 40014
-*/
-        return $this->guzzlePOST(
-            'https://wos-giftcode-api.centurygame.com/api/gift_code',
-            $fid,
-            $giftCode
-        );
-    }
-
-    private function guzzlePOST($url,$fid,$cdk='') {
-        // These statics are for debug use
-        static $rateRemainId   = 0;
-        static $rateRemainCode = 0;
-
-        ///////////////// DEBUG - EMULATE
-        if ( $this->guzEmulate ) {
-            if ($rateRemainId<1)   { $rateRemainId     =7; }
-            if ($rateRemainCode<1) { $rateRemainCode   =7; }
-            if ( ! empty($cdk) ) {
-                // Redeem gift code
-                $rateRemainCode--;
-                return [
-                    'code'          => 0,
-                    'data'          => [],
-                    'msg'           => ($rateRemainCode < 1 ? 'fail429' : 'SUCCESS'),
-                    'err_code'      => 20000,
-                    'headers'       => [
-                        'x-ratelimit-limit' => 30,
-                        'x-ratelimit-remaining' => $rateRemainCode
-                    ],
-                    'http-status'   => ($rateRemainCode < 1 ? 429 : 200),
-                    'guzExceptionMessage' => 'guz is happy'
-                ];
-            } else {
-                // Player Log in
-                $rateRemainId--;
-                $stove = rand(8,29);
-                $f = '{"fid":%d,"nickname":"lord%d","kid":245,"stove_lv":%d,"stove_lv_content":%d,'.
-                    '"avatar_image":"https:\/\/gof-formal-avatar.akamaized.net\/avatar-dev\/2023\/07\/17\/1001.png"}';
-                return [
-                    'code'          => 0,
-                    'data'          => json_decode(sprintf($f,$fid,$fid,$stove,$stove)),
-                    'msg'           => ($rateRemainCode < 1 ? 'fail429' : 'success'),
-                    'err_code'      => '',
-                    'headers'       => [
-                        'x-ratelimit-limit'     => 30,
-                        'x-ratelimit-remaining' => $rateRemainId
-                    ],
-                    'http-status'   => ($rateRemainId < 1 ? 429 : 200),
-                    'guzExceptionMessage' => 'guz is happy'
-                ];
-            }
-        }
-
-        //////////////// PRODUCTION => hit WOS API
-        $timestring = $this->getTimestring(empty($cdk));
-        $signRaw = ($cdk ? "cdk=$cdk&" : '').
-            "fid=$fid&time=$timestring".self::HASH;
-        if ( $this->dbg ) {
-            $this->p("Form params:<br/>\n".
-                    "sign raw: $signRaw\n".
-                    "sign md5: ".md5($signRaw),'pre');
-        }
-        $formParams = [
-            'sign' => md5($signRaw),
-            'fid'  => $fid,
-            'time' => $timestring
-        ];
-        if ($cdk) {
-            $formParams['cdk'] = $cdk;
-        }
-        try {
-            $guzExceptionMessage = '';
-            $guzExceptionCode = 0;
-            $response = $this->guz->request('POST',
-                $url,
-                [
-                    'form_params' => $formParams,
-                    'headers' => [
-                        'Content-Type' => 'application/x-www-form-urlencoded'
-                    ]
-                ]
-            );
-        } catch (\GuzzleHttp\Exception\BadResponseException $e ) {
-            // With a 4xx or 5xx HTTP return code, Guzzle throws this exception.
-            // Pull out Response object from exception class, process as "normal"
-            $response = $e->getResponse();
-            $guzExceptionCode = $e->getCode();
-            $guzExceptionMessage = "$guzExceptionCode: ".$e->getMessage();
-        } catch (\GuzzleHttp\Exception\RequestException $e) {
-            // Networking error
-            $guzExceptionCode = $e->getCode();
-            $guzExceptionMessage = "$guzExceptionCode: ".$e->getMessage();
-            $response = null;
-        } catch (\Exception $e) {
-            // Catch curl errors, like '28: Operation timed out'
-            $guzExceptionCode = $e->getCode();
-            $guzExceptionMessage = "$guzExceptionCode: ".$e->getMessage();
-            $response = null;
-        }
-
-        $headers = [];
-        if ( !empty($response) ) {
-            $body = json_decode($response->getBody());
-            // Headers: Force all param names to lower case and
-            // combine values array into a string
-            foreach ($response->getHeaders() as $name => $values) {
-                $headers[strtolower($name)] = implode(',',$values);
-            }
-            if ( $this->dbg ) {
-                $this->p("<br/>======== HTTP return code: ".$response->getStatusCode(),'p',true);
-                $this->pDebug('Headers: ',$headers);
-                $this->pDebug('Body: ',$body);
-            }
-        }
-        return [
-            'code'          => (isset($body->code) ? $body->code : null),
-            'data'          => (isset($body->data) ? $body->data : null),
-            'msg'           => (isset($body->msg) ? $body->msg : null),
-            'err_code'      => (isset($body->err_code) ? $body->err_code : null),
-            'headers'       => $headers,
-            'http-status'   => (!empty($response) ? $response->getStatusCode() : null),
-            'guzExceptionMessage' => $guzExceptionMessage,
-            'guzExceptionCode' => $guzExceptionCode
-        ];
-    }
-
-    private function getTimestring($renew=false,$inUnixTime=true) {
-        if (empty($this->time) || $renew) {
-            $this->time = tick('now');
-        }
-	    return (string) $this->time->format($inUnixTime ? 'U':
-                'YYYY-MM-DD HH:mm:ss');
-    }
 
     ///////////////////////// View functions
     private function htmlHeader($title=null) {
@@ -1748,10 +1324,12 @@ Body3:
         $this->p('</script>');
         $this->p('</head><body style="background-color:#D3D3D3;">');
         $this->p(sprintf('WOS #245 Gift Rewards <span style="color:#0000c0">[%s]%s</span>',
-            $this->ourAlliance,$this->ourAllianceLong),'h1');
-        if ( $this->dbg || $this->guzEmulate ) {
-            $this->p('Default alliance='.$this->ourAlliance.' state #'.$this->ourState.' dataDir='.$this->dataDir.
-                        "\n".__CLASS__.': dbg='.($this->dbg?1:0).' guzEmulate='.($this->guzEmulate?1:0),'pre',true);
+            $this->wos->ourAlliance,$this->wos->ourAllianceLong),'h1');
+        if ( $this->wos->dbg || $this->wos->guzEmulate ) {
+            $this->p('<span style="color:#007000">');
+            $this->p('Default alliance='.$this->wos->ourAlliance.' state #'.$this->wos->ourState.' dataDir='.$this->wos->dataDir.
+                        "\n".__CLASS__.': dbg='.($this->wos->dbg?1:0).' guzEmulate='.($this->wos->guzEmulate?1:0),'pre',true);
+            $this->p('</span>');
         }
 
         $this->p('<table><tr>');
@@ -1761,7 +1339,7 @@ Body3:
         $this->p('<b>|</b> <a href="/giftcodes">Giftcodes</a>','td');
         $this->p('<b>|</b> <a href="/download">Download</a>','td');
         $this->p('</tr></table><table></tr>');
-        $this->p($this->menuForm('Add','player ID','','['.$this->ourAlliance.'] '),'td');
+        $this->p($this->menuForm('Add','player ID','','['.$this->wos->ourAlliance.'] '),'td');
         $this->p($this->menuForm('Remove','player ID','',' <b>||</b> '),'td');
         $this->p($this->menuForm('Send','gift code','Send Giftcode',' <b>||</b> '),'td');
         $this->p('</tr></table>');
@@ -1799,35 +1377,31 @@ Body3:
             'long_name'  => ['Long Name',     15 ],
             'comment'    => ['Comment',       30 ]
         ];
-        $aId = empty($data['id']) ? 0 : $data['id'];
+        $aID = empty($data['id']) ? 0 : $data['id'];
         $ret = sprintf('<form action="/alliance/%s%s" method="post">%s',
                         strtolower($action),
-                        $aId ? "/$aId" : '',
-                        $aId ? "<td>$aId</td>\n" : "\n"
+                        $aID ? "/$aID" : '',
+                        $aID ? "<td>$aID</td>\n" : "\n"
                     );
         foreach ($aFields as $field => $fieldInfo) {
             $ret .= sprintf('%s<input placeholder="%s" type="text" id="%s" name="%s" size="%d"%s>%s',
-                        $aId ? '<td>' : '',
+                        $aID ? '<td>' : '',
                         $fieldInfo[0], $field, $field, $fieldInfo[1],
                         empty($data[$field]) ? '' : ' value="'.$data[$field].'"',
-                        $aId ? "</td>\n" : "\n"
+                        $aID ? "</td>\n" : "\n"
                     );
         }
         return $ret.sprintf('%s<input type="submit" value="%s"></form>%s',
-                    $aId ? "<td>" : '',
+                    $aID ? "<td>" : '',
                     $action,
-                    $aId ? "</td>" : "\n"
+                    $aID ? "</td>" : "\n"
                 );
     }
     private function p($msg,$htmlType=null,$log=false) {
-        $format = ( empty($htmlType) ? "%s\n" : "<$htmlType>%s</$htmlType>\n" );
-        response()->markup( sprintf($format,$msg) );
-        if ($log) {
-            $this->logInfo($msg);
-        }
+        $this->wos->p($msg,$htmlType,$log);
     }
     private function pDebug($msg,$text) {
-        $this->p("$msg: ".print_r($text,true),'pre',true);
+        $this->wos->pDebug($msg,$text);
     }
     private function pExit($msg,$httpReturnCode) {
         $lines = is_array($msg) ? $msg : [$msg];
@@ -1838,10 +1412,6 @@ Body3:
         $this->p('</p>');
         $this->htmlFooter();
         response()->exit('',$httpReturnCode);
-    }
-    private function logInfo($msg) {
-        static $myPid = getmypid();
-        $this->log->info( "$myPid) ".str_replace("\n"," ",trim(strip_tags($msg))) );
     }
 
     public function buildSorter($key, $dir) {
@@ -1868,208 +1438,6 @@ Body3:
             // 2nd sort key: player_name ASC
             return strnatcmp(strtolower($a['player_name']), strtolower($b['player_name']));
         };
-    }
-}
-
-class playerExtra {
-    public $alliance_id = 0;
-    public $comment     = '';
-    public $ignore      = 0;
-    #public $rank        = 0;
-    #public $power;
-
-    const F_STRING   = 1;
-    const F_INT      = 2;
-    const F_RANK     = 3; // numbers 1-5
-    const F_ALLIANCE = 4; // "join" with alliance_id from database
-    const F_BOOLEAN  = 6;
-
-    private $log;
-    private $fields = [
-        'alliance_id'   => self::F_ALLIANCE,
-        'comment'       => self::F_STRING,
-        'ignore'        => self::F_BOOLEAN
-        #'rank'          => self::F_RANK
-        #'power'         => self::F_INT
-    ];
-    private $alliances; // Valid values for alliance_id & name
-    private $ranks;     // Valid values for rank (R1-R5)
-
-    /**
-     * @param string $extra     Optional JSON string stored in 'extra' DB column
-     * @param array  $getAlliances Optional boolean to get alliances from the database
-     */
-    public function __construct(string $extra='', $getAlliances=false) {
-        $this->log = app()->logger();
-        $this->parseJsonExtra($extra);
-
-        // Pre-populate drop-down fields with valid values
-        $this->alliances[0] = '-';
-        if ($getAlliances) {
-            $alliances = db()
-                ->select('alliances',"id,'[' || short_name || ']' || long_name as alliance_name")
-                ->all();
-            foreach ($alliances as $a) {
-                $this->alliances[$a['id']] = $a['alliance_name'];
-            }
-        }
-        /*
-        $this->ranks[0] = '-';
-        for ($i=1; $i<6; $i++) {
-            $this->ranks[$i] = "R$i";
-        }
-        */
-    }
-
-    /**
-     * Returns the HTML of a form field to display current value + input
-     */
-    public function getHtmlForm($field,$isFilter=false) {
-        $type = ! isset($this->fields[$field]) ? self::F_STRING : $this->fields[$field];
-        switch ($type) {
-            case self::F_ALLIANCE:
-                $options = $isFilter ?
-                    [-1 => 'all'] + $this->alliances :
-                    $this->alliances;
-                break;
-            #case self::F_RANK:
-            #    $options = &$this->ranks;
-            #    break;
-            case self::F_INT:
-                return sprintf('<input type="number" id="%s" name="%s" value="%d">',
-                            $field,$field,$this->$field);
-            case self::F_STRING:
-                return sprintf('<input type="text" id="%s" name="%s" size="%d" value="%s">',
-                            $field,$field,($field=='comment' ? 30 : 10),$this->$field);
-            case self::F_BOOLEAN:
-                if (!$isFilter) {
-                    return sprintf('<input type="checkbox" id="%s" name="%s" %s/>',
-                            $field,$field,($this->$field ? 'checked ' : ''));
-                }
-                $options = [-1 => 'all', 0 => 'false', 1=> 'true'];
-                break;
-            default:
-                return "Unknown field type $type for field $field";
-        }
-        // Drop-down selection:
-        $ret = sprintf('<select name="%s" id="%s%s">',
-            $field, ($isFilter ? 'f:' : ''), $field );
-        $targetId = (isset($options[$this->$field]) ? $this->$field : 0);
-        foreach ($options as $id => $name) {
-            $ret .= sprintf( '<option value="%d"%s>%s</option>',
-                        $id,($id==$targetId ? ' selected' : ''),$name );
-        }
-        $ret .= '</select>';
-        return $ret;
-    }
-
-    /**
-     * Set or replace object values
-     * @param string $extra     JSON string stored in 'extra' DB column
-     */
-    public function parseJsonExtra($extra) {
-        // First reset everything to defaults
-        foreach ($this->fields as $field => $type) {
-            $this->$field = ($type==self::F_STRING ? '' : 0);
-        }
-        if (empty($extra)) {
-            return;
-        }
-        try {
-            $x = json_decode($extra);
-            foreach ($x as $name => $value) {
-                $type = $this->fields[$name];
-                $this->$name = ($type==self::F_STRING ? trim($value) : (int) $value);
-            }
-        } catch (\Exception $e) {
-            $this->log->info(__METHOD__.' Exception: '.$e->getMessage());
-            $this->log->info('extra='.$extra);
-        }
-    }
-
-    /**
-     * Returns JSON-encoded string of playerExtra object
-     */
-    public function getJson() {
-        return json_encode($this, JSON_UNESCAPED_UNICODE);
-    }
-    /**
-     * Get public properties as an array
-     * @param includeHidden Optional boolean to include hidden fields
-     */
-    public function getArray($includeHidden=false) {
-        $a = [];
-        if ($includeHidden) {
-            $a['alliance_name'] = $this->alliances[ intval($this->alliance_id) ];
-        }
-        foreach ($this->fields as $field => $type) {
-            $a[$field] = ($type==self::F_STRING ? $this->$field : (int) $this->$field);
-        }
-        return $a;
-    }
-}
-
-/**
- * Manage giftcode statistics
- */
-class giftcodeStatistics {
-    public $usersSending       = [];
-    public $expected           = [];
-    public $succesful          = 0;
-    public $alreadyReceived    = 0;
-    public $hitRateLimit       = 0;
-    public $networkError       = 0;
-    public $signinErrorCodes   = [];
-    public $giftErrorCodes     = [];
-    public $deletedPlayers     = [];
-    public $runtime            = 0;
-
-    private $log;
-    public function __construct() {
-        $this->log = app()->logger();
-    }
-
-    /**
-     * Increment the value of one of the array statistics
-     */
-    public function increment(string $varName, string $key) {
-        if ( empty($this->$varName[$key]) ) {
-            $this->$varName[$key] = 1;
-        } else {
-            $this->$varName[$key]++;
-        }
-    }
-
-    /**
-     * Set or replace object values
-     * @param string $statistics     JSON string stored in 'statistics' DB column
-     */
-    public function parseJsonStatistics($statistics) {
-        // First reset everything to defaults
-        foreach ($this as $field => $value) {
-            if ( !is_object($value) ) {
-                $this->$field = (is_array($value) ? [] : 0);
-            }
-        }
-        if (empty($statistics)) {
-            return;
-        }
-        try {
-            $x = json_decode($statistics, JSON_OBJECT_AS_ARRAY);
-            foreach ($x as $name => $value) {
-                $this->$name = $value;
-            }
-        } catch (\Exception $e) {
-            $this->log->info(__METHOD__.' Exception: '.$e->getMessage());
-            $this->log->info('statistics='.$statistics);
-        }
-    }
-
-    /**
-     * Returns JSON-encoded string of giftcodeStatistics object
-     */
-    public function getJson() {
-        return json_encode($this, JSON_UNESCAPED_UNICODE | JSON_OBJECT_AS_ARRAY);
     }
 }
 
