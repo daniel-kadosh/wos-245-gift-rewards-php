@@ -16,6 +16,11 @@ https://leafphp.dev/docs/introduction/
 DISCLAIMER: This work follows many best-practices but takes a lot of shortcuts
 because it is just not that important, I don't get along with Javascript and I'm lazy ;-)
 
+Inside the docker container a background daemon will regularly check the database for a
+new giftcode to send, and will process it accordingly. The app will correctly
+ignore re-sending codes that have already been sent to users, plus a handful of other
+checks.
+
 ## Installation
 * Clone from Github: https://github.com/daniel-kadosh/wos-245-gift-rewards-php
 * Host OS: Install Docker
