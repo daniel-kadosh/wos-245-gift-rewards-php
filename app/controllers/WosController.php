@@ -97,19 +97,31 @@ class WosController extends Controller {
      */
     public function home() {
         $this->htmlHeader('== Application capabilities:');
-        $this->p('<table style="margin-left:30px;">');
+        $this->p('NOTE: This website has a lot of #245 that will need to change to #246 after we merge states,'.
+            '</br>so please be patient. I will work on making things more generic :-)'.
+            '</br>I have minimal easy fixes in place for the transition already.','p');
+
+        $this->p('<table style="margin-left:30px; border-spacing:5px">');
         $lineFormat = '<td><li><a href="/%s">/%s</a>%s</li></td>'.
                 '<td><b>%s:</b> %s</td>';
-        $this->p(sprintf($lineFormat,'alliances','alliances','',
-            'Alliance list','Manage alliances list, used to help keep track of players.'),'tr');
+        $dividerFormat = '<td colspan="2"><b>%s</b></td>';
+
+        $this->p(sprintf($dividerFormat,'Main functions'),'tr');
         $this->p(sprintf($lineFormat,'players','players','',
             'Player list','Have to manually add players knowing their WOS player ID<br/>'.
             'Can filter &amp; sort list, and easily update &amp; remove 1 player at a time.'),'tr');
+        $this->p(sprintf($lineFormat,'giftcodes','giftcodes','',
+            'List sent Giftcodes','Summary statistics of Giftcodes sent in the past'),'tr');
         $this->p(sprintf($lineFormat,'send/','send/','[giftcode]',
             'Send a reward','to send ALL players the giftcode if they don\'t have it yet.'.
-            '<br/><b>NOTE:</b> page will take 2-5 minutes to show anything, let it run and wait!'.
-            '<br/>Player will be verified with WOS and <b>DELETED</b> if not found or not in state #'.
-            $this->wos->ourState.'.'),'tr');
+            '<br/>NOTE: Background job will take 5+ minutes to process everyone.'
+            ##245 '<br/>Player will be verified with WOS and <b>DELETED</b> if not found or not in state #'.
+            #$this->wos->ourState.'.')
+            ),'tr');
+
+        $this->p(sprintf($dividerFormat,'Maintenance functions'),'tr');
+        $this->p(sprintf($lineFormat,'alliances','alliances','',
+            'Alliance list','Manage alliances list, used to help keep track of players.'),'tr');
         $this->p(sprintf($lineFormat,'add/','add/','[playerID]',
             'Add a player','Will get basic player info from WOS and check they are in state #'.$this->wos->ourState.
             '.<br/>By default will add in alliance ['.$this->wos->ourAlliance.'] but you can change afterwards.'),'tr');
@@ -118,8 +130,8 @@ class WosController extends Controller {
         $this->p(sprintf($lineFormat,'updateFromWOS/','updateFromWOS/','[playerID|ignore]',
             'Revalidate with WOS','Updates player metadata (name, furnace, etc.) with WOS API.<br/>'.
             'Can update a specific player by ID or those marked "ignore"'),'tr');
-        $this->p(sprintf($lineFormat,'giftcodes','giftcodes','',
-            'List sent Giftcodes','Summary statistics of Giftcodes sent in the past'),'tr');
+
+        $this->p(sprintf($dividerFormat,'Other functions'),'tr');
         $this->p(sprintf($lineFormat,'download','download/','[format]',
             'Download player DB','Supported formats: <b>csv</b>, <b>json</b>, <b>curl</b> (bash script to re-add users), <b>sqlite3</b>'),'tr');
 
@@ -587,7 +599,8 @@ class WosController extends Controller {
             }
             $data = $response['data'];
             if ($data->kid != $this->wos->ourState) {
-                $this->pExit('<b>'.$data->nickname.'</b> is in invalid state #'.$data->kid,404);
+                ##245  $this->pExit('<b>'.$data->nickname.'</b> is in invalid state #'.$data->kid,404);
+                $this->p('WARNING: <b>'.$data->nickname.'</b> is in state #'.$data->kid.' not our #'.$this->wos->ourState,'p',true);
             }
             // All good, insert!
             $pe = new PlayerExtra(); // 'extra' field pre-populated with defaults
@@ -1323,8 +1336,8 @@ class WosController extends Controller {
             }");
         $this->p('</script>');
         $this->p('</head><body style="background-color:#D3D3D3;">');
-        $this->p(sprintf('WOS #245 Gift Rewards <span style="color:#0000c0">[%s]%s</span>',
-            $this->wos->ourAlliance,$this->wos->ourAllianceLong),'h1');
+        $this->p(sprintf('WOS #%d Gift Rewards <span style="color:#0000c0">[%s]%s</span>',
+            $this->wos->ourState,$this->wos->ourAlliance,$this->wos->ourAllianceLong),'h1');
         if ( $this->wos->dbg || $this->wos->guzEmulate ) {
             $this->p('<span style="color:#007000">');
             $this->p('Default alliance='.$this->wos->ourAlliance.' state #'.$this->wos->ourState.' dataDir='.$this->wos->dataDir.

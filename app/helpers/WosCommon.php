@@ -141,7 +141,7 @@ class WosCommon
         $sd = $signInResponse['data'];
         $signInResponse['playerGood'] = true;
         $stateID = isset($sd->kid) ? $sd->kid : -1;
-        if ($signInResponse['err_code'] == 40004 || $stateID !=$this->ourState ) {
+        if ($signInResponse['err_code'] == 40004 ) { ##245 || $stateID !=$this->ourState ) {
             // 40004 = Player doesn't exist
             $this->p(sprintf('DELETING player: invalid %s</p>',
                             $stateID==-1 ? 'WOS user' : 'state (#'.$stateID.')'
@@ -523,7 +523,7 @@ Body3:
                 // Player Log in
                 $rateRemainId--;
                 $stove = rand(8,29);
-                $f = '{"fid":%d,"nickname":"lord%d","kid":245,"stove_lv":%d,"stove_lv_content":%d,'.
+                $f = '{"fid":%d,"nickname":"lord%d","kid":246,"stove_lv":%d,"stove_lv_content":%d,'.
                     '"avatar_image":"https:\/\/gof-formal-avatar.akamaized.net\/avatar-dev\/2023\/07\/17\/1001.png"}';
                 return [
                     'code'          => 0,
