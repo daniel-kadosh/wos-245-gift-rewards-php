@@ -1,6 +1,6 @@
 # README
 
-WOS-245 Gift Rewards & User database (PHP version 2.0.2)
+WOS-245 Gift Rewards & User database (PHP version 3.1)
 
 ## App Info
 Application is initially based on this work:
