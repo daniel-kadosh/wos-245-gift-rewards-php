@@ -284,6 +284,7 @@ class WosCommon
                 $sendGiftGood = true;
                 $this->stats->succesful++;
                 break;
+            case 40005:  // USED.
             case 40008:
                 $msg = "$giftCode: already used";
                 $sendGiftGood = true;
@@ -295,7 +296,7 @@ class WosCommon
                 $this->stats->alreadyReceived++;
                 break;
             default:
-                $msg = "$giftErrCode ".$giftResponse['msg'];
+                $msg = "$giftErrCode ".$giftResponse['msg']." for $giftCode";
                 $this->stats->increment('giftErrorCodes',$msg);
                 break;
         }
